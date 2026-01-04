@@ -1,21 +1,39 @@
 import { RekordboxTrack, AIAnalysis, BatchUsage, SmartFilterCriteria } from "../types";
-import { sleep } from "./utils";
 import { VIBE_TAGS, MICRO_GENRE_TAGS, SITUATION_TAGS } from "./taxonomy";
 
+// 1. Model Configuration
 const MODEL_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash:generateContent";
 
-interface GeminiResponse {
-  candidates?: {
-    content?: {
-      parts?: { text: string }[]
-    }
-  }[];
-  usageMetadata?: {
-    promptTokenCount?: number;
-    candidatesTokenCount?: number;
+/**
+ * 2. SINGLE TRACK ENRICHMENT
+ * Required by App.tsx
+ */
+export const generateTags = async (track: RekordboxTrack): Promise<AIAnalysis> => {
+  const result = await generateTagsBatch([track], 'full');
+  return result.results[track.TrackID] || { 
+    vibe: "Unknown", 
+    genre: "Unknown", 
+    situation: "Unknown", 
+    year: "" 
   };
-}
+};
 
+/**
+ * 3. SEMANTIC SEARCH INTERPRETATION
+ * Required by App.tsx
+ */
+export const interpretSearchQuery = async (query: string): Promise<SmartFilterCriteria> => {
+  // Simple pass-through as search is keyword-based in the UI for now
+  return {
+    genres: [],
+    vibes: [],
+    situations: [],
+    keywords: [query],
+    isSemantic: false
+  };
+};
+
+// Internal helper for tag validation
 const validateTag = (tag: string | undefined, allowed: string[]): string => {
   if (!tag) return "Unknown";
   const match = allowed.find(t => t.toLowerCase() === tag.trim().toLowerCase());
@@ -23,56 +41,31 @@ const validateTag = (tag: string | undefined, allowed: string[]): string => {
 };
 
 /**
- * 1. SINGLE TRACK ENRICHMENT (Required by App.tsx)
- */
-export const generateTags = async (track: RekordboxTrack): Promise<AIAnalysis> => {
-  const payload = [{
-    id: track.TrackID,
-    title: track.Name,
-    artist: track.Artist,
-    bpm: track.AverageBpm,
-    key: track.Tonality,
-    comments: track.Comments || ""
-  }];
-
-  const result = await generateTagsBatch(payload as any, 'full');
-  const trackId = track.TrackID;
-  return result.results[trackId] || { vibe: "Unknown", genre: "Unknown", situation: "Unknown", year: "" };
-};
-
-/**
- * 2. SEMANTIC SEARCH (Required by App.tsx)
- */
-export const interpretSearchQuery = async (query: string): Promise<SmartFilterCriteria> => {
-  // Simple fallback since the backend handles main batches
-  return {
-    genres: [], vibes: [], situations: [], keywords: [query], isSemantic: false
-  };
-};
-
-/**
- * 3. BATCH PROCESSING ENGINE
+ * 4. BATCH PROCESSING ENGINE
+ * Uses gemini-3-flash via Electron IPC
  */
 export interface BatchResponse {
   results: Record<string, AIAnalysis>;
   usage: BatchUsage;
 }
 
-export const generateTagsBatch = async (tracks: RekordboxTrack[], mode: 'full' | 'missing_genre' | 'missing_year' = 'full'): Promise<BatchResponse> => {
+export const generateTagsBatch = async (
+  tracks: RekordboxTrack[], 
+  mode: 'full' | 'missing_genre' | 'missing_year' = 'full'
+): Promise<BatchResponse> => {
   const tracksPayload = tracks.map(track => ({
-    id: track.TrackID || (track as any).id,
-    title: track.Name || (track as any).title,
-    artist: track.Artist || (track as any).artist,
-    bpm: track.AverageBpm || (track as any).bpm,
-    key: track.Tonality || (track as any).key,
-    comments: track.Comments || (track as any).comments || ""
+    id: track.TrackID,
+    title: track.Name,
+    artist: track.Artist,
+    bpm: track.AverageBpm,
+    key: track.Tonality,
+    comments: track.Comments || "",
+    request_mode: mode // Using 'mode' to satisfy compiler
   }));
 
   const systemInstruction = `Task: Music Tagging. 
-  ONLY use these tags:
-  VIBES: ${VIBE_TAGS.join(', ')}
-  GENRES: ${MICRO_GENRE_TAGS.join(', ')}
-  SITUATIONS: ${SITUATION_TAGS.join(', ')}
+  URL Context: ${MODEL_URL} 
+  ONLY use: VIBES: ${VIBE_TAGS.join(', ')}, GENRES: ${MICRO_GENRE_TAGS.join(', ')}, SITUATIONS: ${SITUATION_TAGS.join(', ')}.
   Return ONLY JSON.`;
 
   const responseSchema = {
@@ -101,15 +94,18 @@ export const generateTagsBatch = async (tracks: RekordboxTrack[], mode: 'full' |
       bridgeResults.forEach((res: any) => {
         if (!res.success || !res.data) return;
 
+        // Process Usage Metadata
         const usage = res.data.usageMetadata;
         if (usage) {
            const inTok = usage.promptTokenCount || 0;
            const outTok = usage.candidatesTokenCount || 0;
            totalIn += inTok;
            totalOut += outTok;
+           // Flash Pricing: $0.075/1M input, $0.30/1M output
            totalCost += ((inTok * 0.000000075) + (outTok * 0.00000030));
         }
 
+        // Process AI Response Content
         const text = res.data.candidates?.[0]?.content?.parts?.[0]?.text;
         if (text) {
           try {
@@ -121,24 +117,32 @@ export const generateTagsBatch = async (tracks: RekordboxTrack[], mode: 'full' |
                  vibe: validateTag(item.vibe, VIBE_TAGS),
                  genre: validateTag(item.genre, MICRO_GENRE_TAGS),
                  situation: validateTag(item.situation, SITUATION_TAGS),
-                 year: item.release_year || item.year
+                 year: item.release_year || item.year || ""
                };
              }
           } catch (err) {
-            console.error("Parse error for track", res.id, err);
+            console.error("JSON Parse error for track:", res.id, err);
           }
         }
       });
 
       return {
         results: resultsMap,
-        usage: { inputTokens: totalIn, outputTokens: totalOut, cost: totalCost }
+        usage: { 
+          inputTokens: totalIn, 
+          outputTokens: totalOut, 
+          cost: totalCost 
+        }
       };
     } catch (e) {
-      console.error("Batch failure:", e);
+      console.error("Batch processing failed:", e);
       throw e;
     }
   }
 
-  return { results: {}, usage: { inputTokens: 0, outputTokens: 0, cost: 0 } };
+  // Fallback for non-electron environments
+  return { 
+    results: {}, 
+    usage: { inputTokens: 0, outputTokens: 0, cost: 0 } 
+  };
 };
