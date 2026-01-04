@@ -3,7 +3,7 @@ name: Build CrateBatch
 on:
   push:
     branches: [ main ]
-  workflow_dispatch: # Allows you to manually trigger the build button
+  workflow_dispatch:
 
 jobs:
   build:
@@ -36,4 +36,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: CrateBatch-${{ matrix.os }}
-          path: dist/*
+          # THIS IS THE KEY FIX: Look in 'release', not 'dist'
+          path: release/*
