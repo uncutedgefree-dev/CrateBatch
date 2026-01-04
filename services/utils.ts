@@ -138,7 +138,7 @@ export const calculateLibraryStats = (tracks: RekordboxTrack[]): LibraryStats =>
     }
     
     if (genre !== "Unknown") {
-      genre = genre.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+      genre = genre.split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
     }
     
     genreCounts[genre] = (genreCounts[genre] || 0) + 1;
