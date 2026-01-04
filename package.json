@@ -36,6 +36,7 @@
   },
   "build": {
     "appId": "com.cratebatch.app",
+    "productName": "CrateBatch",
     "files": [
       "dist/**/*",
       "electron/**/*",
@@ -45,10 +46,16 @@
       "output": "release"
     },
     "mac": {
-      "target": "dmg"
+      "target": "dmg",
+      "category": "public.app-category.music"
     },
     "win": {
       "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
     }
   }
 }
