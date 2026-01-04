@@ -117,7 +117,8 @@ declare global {
     electron?: {
       readFile: (path: string) => Promise<{ success: boolean; data: string; error?: string }>;
       saveFile: (payload: { filePath: string; content: string }) => Promise<{ success: boolean; error?: string }>;
-      enrichBatch: (payload: { tracks: any[]; apiKey: string; prompt: string }) => Promise<any[]>;
+      // Updated: Removed apiKey from payload
+      enrichBatch: (payload: { tracks: any[]; prompt: string }) => Promise<any[]>;
     };
   }
 }
