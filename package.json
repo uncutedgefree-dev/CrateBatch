@@ -12,7 +12,6 @@
     "dist": "npm run build && electron-builder"
   },
   "dependencies": {
-    "@google/genai": "^0.0.1",
     "@tanstack/react-virtual": "^3.0.0",
     "axios": "^1.6.0",
     "electron-is-dev": "^3.0.0",
