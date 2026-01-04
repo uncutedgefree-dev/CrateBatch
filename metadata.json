@@ -1,0 +1,5 @@
+{
+  "name": "Rekordbox Library Analyzer",
+  "description": "A dark-mode DJ tool to parse, view, and analyze Rekordbox collection XML files.",
+  "requestFramePermissions": []
+}
