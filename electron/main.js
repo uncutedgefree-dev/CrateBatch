@@ -4,7 +4,7 @@ const axios = require('axios');
 const pLimit = require('p-limit');
 const fs = require('fs');
 
-// 🔒 THE VAULT: Hardcoded API Key for Desktop App
+// 🔒 THE VAULT: Hardcoded API Key
 const MOZART_API_KEY = 'AIzaSyD3UA7hHSrowzF-fEXTmQoPBOZJ8HZje_c';
 
 let mainWindow;
@@ -17,11 +17,10 @@ function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false, // Security best practice
+      nodeIntegration: false,
     },
   });
 
-  // Load the built app in production or localhost in dev
   const startUrl = process.env.ELECTRON_START_URL || `file://${path.join(__dirname, '../dist/index.html')}`;
   mainWindow.loadURL(startUrl);
 }
@@ -29,22 +28,17 @@ function createWindow() {
 app.whenReady().then(createWindow);
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  if (process.platform !== 'darwin') app.quit();
 });
 
 app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
-  }
+  if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });
 
 // ---------------------------------------------------------
-//  THE UNLIMITED POWER ENGINE (IPC HANDLERS)
+//  IPC HANDLERS
 // ---------------------------------------------------------
 
-// 1. FILE SYSTEM: Read the XML file directly from disk
 ipcMain.handle('READ_FILE', async (event, filePath) => {
   try {
     const data = fs.readFileSync(filePath, 'utf-8');
@@ -54,7 +48,6 @@ ipcMain.handle('READ_FILE', async (event, filePath) => {
   }
 });
 
-// 2. FILE SYSTEM: Save the enriched XML back to disk
 ipcMain.handle('SAVE_FILE', async (event, { filePath, content }) => {
   try {
     fs.writeFileSync(filePath, content, 'utf-8');
@@ -64,29 +57,27 @@ ipcMain.handle('SAVE_FILE', async (event, { filePath, content }) => {
   }
 });
 
-// 3. ENRICHMENT: The "Fan-Out" Engine
-// Receives a batch of tracks and processes them in parallel (Limited concurrency)
 ipcMain.handle('ENRICH_BATCH', async (event, { tracks, prompt }) => {
   if (!tracks || tracks.length === 0) return [];
 
-  const limit = pLimit(50); // Run 50 requests in parallel
+  const limit = pLimit(50); // High concurrency for Flash
 
   const tasks = tracks.map((track) => limit(async () => {
     try {
-      // Direct call to Gemini API using Axios (Bypasses Browser Limits)
-      // Uses the hardcoded MOZART_API_KEY
+      // Using gemini-3-flash as confirmed available
       const response = await axios.post(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash:generateContent?key=${MOZART_API_KEY}`,
         {
           contents: [{ role: 'user', parts: [{ text: prompt + JSON.stringify(track) }] }],
-          generationConfig: { response_mime_type: "application/json" }
+          generationConfig: { 
+            response_mime_type: "application/json",
+            temperature: 0.1 // Lower temperature for more consistent tagging
+          }
         },
-        { timeout: 120000 } // 2 minute timeout
+        { timeout: 120000 }
       );
       
-      // Handle ID mapping safely
       const trackId = track.id || track.TrackID || track.ID;
-
       return { id: trackId, data: response.data, success: true };
     } catch (err) {
       const trackId = track.id || track.TrackID || track.ID;
@@ -95,6 +86,5 @@ ipcMain.handle('ENRICH_BATCH', async (event, { tracks, prompt }) => {
     }
   }));
 
-  // Wait for all tasks to complete
   return await Promise.all(tasks);
 });
