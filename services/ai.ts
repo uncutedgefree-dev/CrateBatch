@@ -2,7 +2,6 @@ import { RekordboxTrack, AIAnalysis, BatchUsage, SmartFilterCriteria } from "../
 import { sleep } from "./utils";
 import { VIBE_TAGS, MICRO_GENRE_TAGS, SITUATION_TAGS } from "./taxonomy";
 
-// Updated to gemini-3-flash
 const MODEL_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash:generateContent";
 
 interface GeminiResponse {
@@ -23,45 +22,72 @@ const validateTag = (tag: string | undefined, allowed: string[]): string => {
   return match || "Unknown";
 };
 
-export const generateTagsBatch = async (tracks: RekordboxTrack[], mode: 'full' | 'missing_genre' | 'missing_year' = 'full'): Promise<any> => {
-  const tracksPayload = tracks.map(track => {
-    let energyLevel = track.Energy;
-    if (!energyLevel && track.Comments) {
-      const energyMatch = track.Comments.match(/Energy\s*:\s*(\d+)/i);
-      if (energyMatch && energyMatch[1]) energyLevel = energyMatch[1];
-    }
-    
-    return {
-      id: track.TrackID,
-      title: track.Name,
-      artist: track.Artist,
-      bpm: track.AverageBpm,
-      key: track.Tonality,
-      comments: track.Comments || "",
-      energy_instruction: energyLevel ? `Known Energy: ${energyLevel}/10. Match vibe.` : "Estimate intensity."
-    };
-  });
+/**
+ * 1. SINGLE TRACK ENRICHMENT (Required by App.tsx)
+ */
+export const generateTags = async (track: RekordboxTrack): Promise<AIAnalysis> => {
+  const payload = [{
+    id: track.TrackID,
+    title: track.Name,
+    artist: track.Artist,
+    bpm: track.AverageBpm,
+    key: track.Tonality,
+    comments: track.Comments || ""
+  }];
 
-  const systemInstruction = `Tag music precisely. ONLY use:
+  const result = await generateTagsBatch(payload as any, 'full');
+  const trackId = track.TrackID;
+  return result.results[trackId] || { vibe: "Unknown", genre: "Unknown", situation: "Unknown", year: "" };
+};
+
+/**
+ * 2. SEMANTIC SEARCH (Required by App.tsx)
+ */
+export const interpretSearchQuery = async (query: string): Promise<SmartFilterCriteria> => {
+  // Simple fallback since the backend handles main batches
+  return {
+    genres: [], vibes: [], situations: [], keywords: [query], isSemantic: false
+  };
+};
+
+/**
+ * 3. BATCH PROCESSING ENGINE
+ */
+export interface BatchResponse {
+  results: Record<string, AIAnalysis>;
+  usage: BatchUsage;
+}
+
+export const generateTagsBatch = async (tracks: RekordboxTrack[], mode: 'full' | 'missing_genre' | 'missing_year' = 'full'): Promise<BatchResponse> => {
+  const tracksPayload = tracks.map(track => ({
+    id: track.TrackID || (track as any).id,
+    title: track.Name || (track as any).title,
+    artist: track.Artist || (track as any).artist,
+    bpm: track.AverageBpm || (track as any).bpm,
+    key: track.Tonality || (track as any).key,
+    comments: track.Comments || (track as any).comments || ""
+  }));
+
+  const systemInstruction = `Task: Music Tagging. 
+  ONLY use these tags:
   VIBES: ${VIBE_TAGS.join(', ')}
   GENRES: ${MICRO_GENRE_TAGS.join(', ')}
   SITUATIONS: ${SITUATION_TAGS.join(', ')}
-  Return JSON format.`;
+  Return ONLY JSON.`;
 
   const responseSchema = {
     type: "OBJECT",
     properties: {
-      id: { type: "STRING" },
       vibe: { type: "STRING" },
       genre: { type: "STRING" },
       situation: { type: "STRING" },
-      release_year: { type: "STRING" },
+      release_year: { type: "STRING" }
     },
-    required: ["id", "vibe", "genre", "situation"],
+    required: ["vibe", "genre", "situation"]
   };
 
   if (window.electron) {
-    const fullPrompt = `${systemInstruction}\n\nSchema:\n${JSON.stringify(responseSchema)}\n\nData:\n`;
+    const fullPrompt = `${systemInstruction}\n\nSchema:\n${JSON.stringify(responseSchema)}\n\nTracks:\n`;
     
     try {
       const bridgeResults = await window.electron.enrichBatch({
@@ -81,25 +107,26 @@ export const generateTagsBatch = async (tracks: RekordboxTrack[], mode: 'full' |
            const outTok = usage.candidatesTokenCount || 0;
            totalIn += inTok;
            totalOut += outTok;
-           // Flash pricing: $0.075 / 1M input, $0.30 / 1M output
            totalCost += ((inTok * 0.000000075) + (outTok * 0.00000030));
         }
 
         const text = res.data.candidates?.[0]?.content?.parts?.[0]?.text;
         if (text) {
           try {
-             const json = JSON.parse(text.replace(/```json/g, '').replace(/```/g, '').trim());
-             const item = json.results ? json.results[0] : json;
+             const cleanText = text.replace(/```json/g, '').replace(/```/g, '').trim();
+             const item = JSON.parse(cleanText);
 
-             if (item && item.id) {
-               resultsMap[item.id] = {
+             if (item) {
+               resultsMap[res.id] = {
                  vibe: validateTag(item.vibe, VIBE_TAGS),
                  genre: validateTag(item.genre, MICRO_GENRE_TAGS),
                  situation: validateTag(item.situation, SITUATION_TAGS),
-                 year: item.release_year
+                 year: item.release_year || item.year
                };
              }
-          } catch (err) { console.error("Parse error", err); }
+          } catch (err) {
+            console.error("Parse error for track", res.id, err);
+          }
         }
       });
 
@@ -107,9 +134,11 @@ export const generateTagsBatch = async (tracks: RekordboxTrack[], mode: 'full' |
         results: resultsMap,
         usage: { inputTokens: totalIn, outputTokens: totalOut, cost: totalCost }
       };
-    } catch (e) { throw e; }
+    } catch (e) {
+      console.error("Batch failure:", e);
+      throw e;
+    }
   }
+
   return { results: {}, usage: { inputTokens: 0, outputTokens: 0, cost: 0 } };
 };
-
-// ... keep interpretSearchQuery and other helpers below ...
