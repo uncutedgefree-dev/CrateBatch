@@ -46,15 +46,13 @@
       "output": "release"
     },
     "mac": {
-      "target": [
-        {
-          "target": "dmg",
-          "arch": [
-            "universal"
-          ]
-        }
+      "target": "dmg",
+      "arch": [
+        "x64",
+        "arm64"
       ],
-      "category": "public.app-category.music"
+      "category": "public.app-category.music",
+      "identity": null
     },
     "win": {
       "target": "nsis"
