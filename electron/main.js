@@ -4,6 +4,7 @@ const axios = require('axios');
 const pLimit = require('p-limit');
 const fs = require('fs');
 
+// 🔒 THE VAULT: Hardcoded API Key for Desktop App
 const MOZART_API_KEY = 'AIzaSyD3UA7hHSrowzF-fEXTmQoPBOZJ8HZje_c';
 
 let mainWindow;
@@ -73,6 +74,7 @@ ipcMain.handle('ENRICH_BATCH', async (event, { tracks, prompt }) => {
   const tasks = tracks.map((track) => limit(async () => {
     try {
       // Direct call to Gemini API using Axios (Bypasses Browser Limits)
+      // Uses the hardcoded MOZART_API_KEY
       const response = await axios.post(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash:generateContent?key=${MOZART_API_KEY}`,
         {
