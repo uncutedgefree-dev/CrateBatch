@@ -2,7 +2,7 @@ import { RekordboxTrack, AIAnalysis, BatchUsage, SmartFilterCriteria } from "../
 import { sleep } from "./utils";
 import { VIBE_TAGS, MICRO_GENRE_TAGS, SITUATION_TAGS } from "./taxonomy";
 
-// API Configuration
+// API Configuration (Legacy fallback for web mode)
 const API_KEY = process.env.API_KEY;
 const MODEL_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash:generateContent";
 
@@ -26,7 +26,7 @@ const validateTag = (tag: string | undefined, allowed: string[]): string => {
   return match || "Unknown";
 };
 
-// Helper to make the fetch call
+// Helper to make the fetch call (Web Fallback)
 async function callGemini(prompt: string, systemInstruction: string, responseSchema: any): Promise<{ json: any, usage: BatchUsage }> {
   if (!API_KEY) throw new Error("API_KEY is missing. Check your environment variables.");
 
@@ -294,13 +294,14 @@ Return a JSON object:
   // ------------------------------------------------------------------
   // ELECTRON ENGINE (Unlimited Concurrency via Node.js)
   // ------------------------------------------------------------------
-  if (window.electron && API_KEY) {
+  // Check for window.electron presence only (Removed API_KEY check)
+  if (window.electron) {
     const fullPrompt = `${systemInstruction}\n\nStrictly follow this JSON Schema:\n${JSON.stringify(responseSchema)}\n\nTrack Data:\n`;
     
     try {
+      // Call bridge WITHOUT the apiKey property
       const bridgeResults = await window.electron.enrichBatch({
         tracks: tracksPayload,
-        apiKey: API_KEY,
         prompt: fullPrompt
       });
 
