@@ -36,6 +36,7 @@ const App: React.FC = () => {
   const [dashboardFilter, setDashboardFilter] = useState<{ type: string, value: string } | null>(null);
   const [smartFilter] = useState<any>(null);
   const [processingTrackIds, setProcessingTrackIds] = useState<string[] | null>(null);
+  const [activeProcessingIds, setActiveProcessingIds] = useState<Set<string>>(new Set());
 
   const stats = useMemo(() => calculateLibraryStats(tracks), [tracks]);
 
@@ -100,6 +101,13 @@ const App: React.FC = () => {
     const totalBatches = chunks.length;
 
     const tasks = chunks.map((chunk, idx) => async () => {
+      const chunkIds = chunk.map(t => t.TrackID);
+      setActiveProcessingIds(prev => {
+        const next = new Set(prev);
+        chunkIds.forEach(id => next.add(id));
+        return next;
+      });
+
       const chunkStart = performance.now();
       const { results, usage, error } = await generateTagsBatch(chunk, mode);
       
@@ -146,6 +154,12 @@ const App: React.FC = () => {
            updateTrackNode(t, results[t.TrackID], mode);
         }
       });
+
+      setActiveProcessingIds(prev => {
+        const next = new Set(prev);
+        chunkIds.forEach(id => next.delete(id));
+        return next;
+      });
     });
 
     await runConcurrent(tasks, 3); 
@@ -160,6 +174,25 @@ const App: React.FC = () => {
     const xml = exportRekordboxXML(fullXmlDataRef.current);
     const url = URL.createObjectURL(new Blob([xml], { type: 'text/xml' }));
     const a = document.createElement('a'); a.href = url; a.download = 'enriched.xml'; a.click();
+  };
+
+  const handleAnalyzeSingle = async (trackId: string) => {
+    const track = tracks.find(t => t.TrackID === trackId);
+    if (!track) return;
+    
+    setActiveProcessingIds(prev => new Set(prev).add(trackId));
+    const { results } = await generateTagsBatch([track], 'full');
+    
+    if (results[trackId]) {
+      setTracks(prev => prev.map(t => t.TrackID === trackId ? { ...t, Analysis: results[trackId] } : t));
+      updateTrackNode(track, results[trackId], 'full');
+    }
+    
+    setActiveProcessingIds(prev => {
+      const next = new Set(prev);
+      next.delete(trackId);
+      return next;
+    });
   };
 
   return (
@@ -178,7 +211,7 @@ const App: React.FC = () => {
           </div>
         )}
       </header>
-      <main className="flex-1 overflow-y-auto no-scrollbar">
+      <main className="flex-1">
         <div className="p-6 flex flex-col min-h-full">
           {status === ParseStatus.IDLE && <div className="flex-1 flex flex-col items-center justify-center mt-20"><h2 className="text-2xl font-bold mb-4">Import Collection</h2><FileUploader onFileSelect={handleFileSelect} isLoading={false} /></div>}
           {status === ParseStatus.SUCCESS && (
@@ -210,7 +243,7 @@ const App: React.FC = () => {
                   onReviewDuplicates={() => setShowDuplicateModal(true)} 
                />
                <div className="flex items-center justify-between"><div className="text-dj-dim text-xs font-mono">Showing {visibleTracks.length} tracks {activeFilterName && `(Filtered: ${activeFilterName})`}</div>{(activeFilterName || activeSearchQuery) && <button onClick={() => setShowPlaylistModal(true)} className="flex items-center gap-1.5 px-3 py-1 bg-green-500/10 border border-green-500 rounded-full text-xs font-bold text-green-500 hover:bg-green-500 hover:text-black"><ListPlus className="w-3 h-3" />Save as Playlist</button>}</div>
-               <TrackTable tracks={visibleTracks} onAnalyzeTrack={() => {}} analyzingIds={new Set()} />
+               <TrackTable tracks={visibleTracks} onAnalyzeTrack={handleAnalyzeSingle} analyzingIds={activeProcessingIds} />
             </div>
           )}
         </div>

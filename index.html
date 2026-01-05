@@ -51,6 +51,27 @@
       .animate-fade-in {
         animation: fadeIn 0.3s ease-out forwards;
       }
+
+      @keyframes pulse-neon {
+        0%, 100% { opacity: 1; filter: brightness(1); }
+        50% { opacity: 0.7; filter: brightness(1.5) drop-shadow(0 0 5px #00f3ff); }
+      }
+      .animate-pulse-neon {
+        animation: pulse-neon 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+      }
+
+      @keyframes scanline {
+        0% { transform: translateY(-100%); }
+        100% { transform: translateY(100%); }
+      }
+      .scanline-effect::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(to bottom, transparent, rgba(0, 243, 255, 0.1), transparent);
+        animation: scanline 2s linear infinite;
+        pointer-events: none;
+      }
     </style>
   </head>
   <body class="bg-dj-dark text-white antialiased min-h-screen">

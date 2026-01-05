@@ -18,11 +18,11 @@ const TrackRow = React.memo<{
 }>(({ track, isAnalyzing, onAnalyze, style }) => {
   return (
     <div 
-      className="grid border-b border-dj-border/30 hover:bg-white/5 transition-colors duration-150 items-center text-sm absolute top-0 left-0 w-full bg-dj-panel"
+      className={`grid border-b border-dj-border/30 hover:bg-white/5 transition-colors duration-150 items-center text-sm absolute top-0 left-0 w-full bg-dj-panel ${isAnalyzing ? 'scanline-effect bg-dj-neon/5' : ''}`}
       style={{ ...style, gridTemplateColumns: GRID_TEMPLATE }}
     >
       <div className="px-4 text-dj-dim font-mono text-xs truncate">{track.TrackID}</div>
-      <div className="px-4 text-white font-medium truncate" title={track.Name}>{track.Name}</div>
+      <div className={`px-4 font-medium truncate ${isAnalyzing ? 'text-dj-neon' : 'text-white'}`} title={track.Name}>{track.Name}</div>
       <div className="px-4 text-gray-300 truncate" title={track.Artist}>{track.Artist}</div>
       <div className="px-4 text-gray-300 truncate">{track.Genre || '-'}</div>
       <div className="px-4 text-gray-400 font-mono text-center">{track.Year || '-'}</div>
@@ -41,13 +41,23 @@ const TrackRow = React.memo<{
             <span className="shrink-0 px-2 py-1 rounded bg-blue-500/10 border border-blue-500/50 text-blue-300 text-[10px] font-bold whitespace-nowrap">{track.Analysis.situation}</span>
           </div>
         ) : (
-          <button onClick={() => onAnalyze(track.TrackID)} disabled={isAnalyzing} className={`text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded border transition-all ${isAnalyzing ? 'border-dj-dim text-dj-dim cursor-wait' : 'border-dj-border text-gray-400 hover:border-dj-neon hover:text-dj-neon hover:shadow-[0_0_10px_rgba(0,243,255,0.3)]'}`}>{isAnalyzing ? "Thinking..." : "Tag"}</button>
+          <button 
+            onClick={() => onAnalyze(track.TrackID)} 
+            disabled={isAnalyzing} 
+            className={`text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded border transition-all ${isAnalyzing ? 'border-dj-neon text-dj-neon animate-pulse-neon cursor-wait' : 'border-dj-border text-gray-400 hover:border-dj-neon hover:text-dj-neon hover:shadow-[0_0_10px_rgba(0,243,255,0.3)]'}`}
+          >
+            {isAnalyzing ? "Processing..." : "Tag"}
+          </button>
         )}
       </div>
     </div>
   );
 }, (prev, next) => {
-  return prev.isAnalyzing === next.isAnalyzing && prev.track.TrackID === next.track.TrackID && prev.track.Analysis === next.track.Analysis && prev.track.Genre === next.track.Genre && prev.track.Year === next.track.Year;
+  return prev.isAnalyzing === next.isAnalyzing && 
+         prev.track.TrackID === next.track.TrackID && 
+         prev.track.Analysis === next.track.Analysis && 
+         prev.track.Genre === next.track.Genre && 
+         prev.track.Year === next.track.Year;
 });
 
 const TrackTable: React.FC<TrackTableProps> = ({ tracks, onAnalyzeTrack, analyzingIds }) => {
