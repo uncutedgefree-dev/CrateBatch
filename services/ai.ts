@@ -1,7 +1,7 @@
 import { RekordboxTrack, AIAnalysis, BatchUsage, SmartFilterCriteria } from "../types";
 import { VIBE_TAGS, MICRO_GENRE_TAGS, SITUATION_TAGS } from "./taxonomy";
 
-// Model Configuration - LOCKED TO GEMINI-3-FLASH
+// Model Configuration - STRICTLY LOCKED TO GEMINI-3-FLASH
 const MODEL_NAME = "gemini-3-flash";
 
 export const generateTags = async (track: RekordboxTrack): Promise<AIAnalysis> => {
@@ -22,6 +22,7 @@ const validateTag = (tag: string | undefined, allowed: string[]): string => {
 export interface BatchResponse {
   results: Record<string, AIAnalysis>;
   usage: BatchUsage;
+  error?: string; // Surfaces API errors to the UI
 }
 
 export const generateTagsBatch = async (
@@ -39,7 +40,7 @@ export const generateTagsBatch = async (
   }));
 
   const systemInstruction = `Task: Music Tagging. Return ONLY JSON. 
-  Model Context: ${MODEL_NAME}.
+  Model: ${MODEL_NAME}.
   ONLY use: VIBES: ${VIBE_TAGS.join(', ')}, GENRES: ${MICRO_GENRE_TAGS.join(', ')}, SITUATIONS: ${SITUATION_TAGS.join(', ')}.`;
 
   const responseSchema = {
@@ -55,10 +56,11 @@ export const generateTagsBatch = async (
       const bridgeResults = await window.electron.enrichBatch({ tracks: tracksPayload, prompt: fullPrompt });
       const resultsMap: Record<string, AIAnalysis> = {};
       let totalCost = 0, totalIn = 0, totalOut = 0;
+      let lastErrorMessage = "";
 
       bridgeResults.forEach((res: any) => {
         if (!res.success || !res.data) {
-           console.error(`[AI] Processing failed for track ${res.id}: ${res.error}`);
+           lastErrorMessage = res.error || "Unknown API error";
            return;
         }
         const usage = res.data.usageMetadata;
@@ -80,16 +82,19 @@ export const generateTagsBatch = async (
                situation: validateTag(item.situation, SITUATION_TAGS),
                year: item.release_year || item.year || ""
              };
-          } catch (err) {
-             console.error(`[AI] JSON Parse error for ${res.id}`);
-          }
+          } catch (err) {}
         }
       });
-      return { results: resultsMap, usage: { inputTokens: totalIn, outputTokens: totalOut, cost: totalCost } };
+      
+      return { 
+        results: resultsMap, 
+        usage: { inputTokens: totalIn, outputTokens: totalOut, cost: totalCost },
+        error: Object.keys(resultsMap).length === 0 ? lastErrorMessage : undefined
+      };
     } catch (e) {
-      console.error("[AI] Bridge communication failure:", e);
+      return { results: {}, usage: { inputTokens: 0, outputTokens: 0, cost: 0 }, error: "Bridge connection failed" };
     }
   }
 
-  return { results: {}, usage: { inputTokens: 0, outputTokens: 0, cost: 0 } };
+  return { results: {}, usage: { inputTokens: 0, outputTokens: 0, cost: 0 }, error: "Electron not detected" };
 };
