@@ -24,7 +24,6 @@ if (!process.env.GEMINI_API_KEY) {
   }
 }
 
-// Priority: System Environment (GitHub Secret) -> process.env
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || ''; 
 
 let mainWindow;
@@ -70,7 +69,6 @@ ipcMain.handle('SAVE_FILE', async (event, { filePath, content }) => {
 });
 
 ipcMain.handle('ENRICH_BATCH', async (event, { tracks, prompt }) => {
-  console.log(`[Main] IPC ENRICH_BATCH received: ${tracks?.length} tracks`);
   if (!tracks || tracks.length === 0) return [];
   
   if (!GEMINI_API_KEY) {
@@ -83,9 +81,9 @@ ipcMain.handle('ENRICH_BATCH', async (event, { tracks, prompt }) => {
   
   const processTrack = async (track) => {
     try {
-      // STRICTLY USING GEMINI-3-FLASH
+      // Switched to v1 endpoint and keeping gemini-3-flash
       const response = await axios.post(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash:generateContent?key=${GEMINI_API_KEY}`,
+        `https://generativelanguage.googleapis.com/v1/models/gemini-3-flash:generateContent?key=${GEMINI_API_KEY}`,
         {
           contents: [{ role: 'user', parts: [{ text: prompt + JSON.stringify(track) }] }],
           generationConfig: { response_mime_type: "application/json", temperature: 0.1 }
@@ -98,7 +96,6 @@ ipcMain.handle('ENRICH_BATCH', async (event, { tracks, prompt }) => {
     } catch (err) {
       const trackId = track.id || track.TrackID || track.ID;
       const errMsg = err.response?.data?.error?.message || err.message;
-      console.error(`[Main] Error for track ${trackId}:`, errMsg);
       return { id: trackId, error: errMsg, success: false };
     }
   };
