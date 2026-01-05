@@ -34,7 +34,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: CrateBatch-MacOS-Intel
-          path: release/*.dmg
+          path: dist-electron/*.dmg
 
   build-macos-arm:
     runs-on: macos-latest
@@ -63,7 +63,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: CrateBatch-MacOS-ARM
-          path: release/*.dmg
+          path: dist-electron/*.dmg
 
   build-windows:
     runs-on: windows-latest
@@ -93,4 +93,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: CrateBatch-Windows
-          path: release/*.exe
+          path: dist-electron/*.exe
