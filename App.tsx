@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { ListPlus, CheckCircle } from 'lucide-react';
+import { ListPlus, CheckCircle, XCircle } from 'lucide-react';
 import FileUploader from './components/FileUploader';
 import TrackTable from './components/TrackTable';
 import LibraryDashboard from './components/LibraryDashboard';
@@ -134,7 +134,8 @@ const App: React.FC = () => {
       }
       
       const durationSoFarMin = (performance.now() - startTime) / 60000;
-      const currentSpm = processedCount / (durationSoFarMin || 0.001);
+      // Calculate global SPM: Total Processed / Total Time in Minutes
+      const currentSpm = processedCount / (durationSoFarMin || 0.0001);
       
       const remainingSongs = targetTracks.length - processedCount;
       const etaSec = (remainingSongs / (currentSpm || 1)) * 60;
@@ -159,20 +160,23 @@ const App: React.FC = () => {
         const res = results[t.TrackID];
         
         if (mode === 'missing_genre') {
-          return { 
-            ...t, 
-            Genre: res.genre !== "Unknown" ? res.genre : t.Genre, 
-            Analysis: t.Analysis ? { ...t.Analysis, genre: res.genre } : { genre: res.genre, vibe: 'Unknown', situation: 'Unknown', year: '0' } as AIAnalysis 
-          };
+            // ONLY update the Genre field for missing_genre mode
+            return { 
+              ...t, 
+              Genre: res.genre !== "Unknown" ? res.genre : t.Genre
+              // DO NOT touch Analysis.genre or other fields here
+            };
         }
         if (mode === 'missing_year') {
-          return { 
-            ...t, 
-            Year: (res.year && res.year !== "0") ? res.year : t.Year, 
-            Analysis: t.Analysis ? { ...t.Analysis, year: res.year } : { genre: 'Unknown', vibe: 'Unknown', situation: 'Unknown', year: res.year } as AIAnalysis 
-          };
+             // ONLY update the Year field for missing_year mode
+             return { 
+                ...t, 
+                Year: (res.year && res.year !== "0") ? res.year : t.Year
+                // DO NOT touch Analysis.year or other fields here
+              };
         }
         
+        // Full AI Enrich mode - Update Analysis object
         return { ...t, Analysis: res };
       }));
 
@@ -216,7 +220,7 @@ const App: React.FC = () => {
                }
 
               const durationSoFarMin = (performance.now() - startTime) / 60000;
-              const currentSpm = processedCount / (durationSoFarMin || 0.001);
+              const currentSpm = processedCount / (durationSoFarMin || 0.0001);
 
               setProcessingStats(prev => ({
                 ...prev,
@@ -238,18 +242,18 @@ const App: React.FC = () => {
                 const res = results[t.TrackID];
                 
                 if (mode === 'missing_genre') {
-                  return { 
-                    ...t, 
-                    Genre: res.genre !== "Unknown" ? res.genre : t.Genre, 
-                    Analysis: t.Analysis ? { ...t.Analysis, genre: res.genre } : { genre: res.genre, vibe: 'Unknown', situation: 'Unknown', year: '0' } as AIAnalysis 
-                  };
+                    // ONLY update the Genre field for missing_genre mode
+                    return { 
+                      ...t, 
+                      Genre: res.genre !== "Unknown" ? res.genre : t.Genre
+                    };
                 }
                 if (mode === 'missing_year') {
-                  return { 
-                    ...t, 
-                    Year: (res.year && res.year !== "0") ? res.year : t.Year, 
-                    Analysis: t.Analysis ? { ...t.Analysis, year: res.year } : { genre: 'Unknown', vibe: 'Unknown', situation: 'Unknown', year: res.year } as AIAnalysis 
-                  };
+                    // ONLY update the Year field for missing_year mode
+                     return { 
+                        ...t, 
+                        Year: (res.year && res.year !== "0") ? res.year : t.Year
+                      };
                 }
                 
                 return { ...t, Analysis: res };
@@ -303,6 +307,13 @@ const App: React.FC = () => {
     });
   };
 
+  const clearFilters = () => {
+    setActiveFilterName(null);
+    setDashboardFilter(null);
+    setActiveSearchQuery("");
+    setSearchInput("");
+  };
+
   return (
     <div className="flex flex-col h-screen bg-dj-dark text-white font-sans selection:bg-dj-neon selection:text-black overflow-hidden">
       <header className="flex-none h-16 border-b border-dj-border bg-dj-dark/50 flex items-center justify-between px-6 sticky top-0 z-50 backdrop-blur-md">
@@ -351,7 +362,20 @@ const App: React.FC = () => {
                   }} 
                   onReviewDuplicates={() => setShowDuplicateModal(true)} 
                />
-               <div className="flex items-center justify-between"><div className="text-dj-dim text-xs font-mono">Showing {visibleTracks.length} tracks {activeFilterName && `(Filtered: ${activeFilterName})`}</div>{(activeFilterName || activeSearchQuery) && <button onClick={() => setShowPlaylistModal(true)} className="flex items-center gap-1.5 px-3 py-1 bg-green-500/10 border border-green-500 rounded-full text-xs font-bold text-green-500 hover:bg-green-500 hover:text-black"><ListPlus className="w-3 h-3" />Save as Playlist</button>}</div>
+               <div className="flex items-center justify-between">
+                 <div className="flex items-center gap-4">
+                   <div className="text-dj-dim text-xs font-mono">Showing {visibleTracks.length} tracks {activeFilterName && `(Filtered: ${activeFilterName})`}</div>
+                   {(activeFilterName || activeSearchQuery) && (
+                     <button 
+                       onClick={clearFilters} 
+                       className="flex items-center gap-1.5 px-3 py-1 bg-red-500/10 border border-red-500 rounded-full text-xs font-bold text-red-500 hover:bg-red-500 hover:text-white transition-colors"
+                     >
+                       <XCircle className="w-3 h-3" /> Clear Filters
+                     </button>
+                   )}
+                 </div>
+                 {(activeFilterName || activeSearchQuery) && <button onClick={() => setShowPlaylistModal(true)} className="flex items-center gap-1.5 px-3 py-1 bg-green-500/10 border border-green-500 rounded-full text-xs font-bold text-green-500 hover:bg-green-500 hover:text-black"><ListPlus className="w-3 h-3" />Save as Playlist</button>}
+               </div>
                <TrackTable tracks={visibleTracks} onAnalyzeTrack={handleAnalyzeSingle} analyzingIds={activeProcessingIds} scrollElement={mainScrollRef.current} />
             </div>
           )}
