@@ -1,18 +1,13 @@
 import { RekordboxTrack, AIAnalysis, BatchUsage, SmartFilterCriteria } from "../types";
 import { VIBE_TAGS, MICRO_GENRE_TAGS, SITUATION_TAGS } from "./taxonomy";
-import axios from 'axios';
 
-// 1. Model Configuration
-const MODEL_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash:generateContent";
+// Model Configuration - LOCKED TO GEMINI-3-FLASH
+const MODEL_NAME = "gemini-3-flash";
+const MODEL_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent`;
 
 export const generateTags = async (track: RekordboxTrack): Promise<AIAnalysis> => {
   const result = await generateTagsBatch([track], 'full');
-  return result.results[track.TrackID] || { 
-    vibe: "Unknown", 
-    genre: "Unknown", 
-    situation: "Unknown", 
-    year: "" 
-  };
+  return result.results[track.TrackID] || { vibe: "Unknown", genre: "Unknown", situation: "Unknown", year: "" };
 };
 
 export const interpretSearchQuery = async (query: string): Promise<SmartFilterCriteria> => {
@@ -30,9 +25,6 @@ export interface BatchResponse {
   usage: BatchUsage;
 }
 
-/**
- * 4. BATCH PROCESSING ENGINE
- */
 export const generateTagsBatch = async (
   tracks: RekordboxTrack[], 
   mode: 'full' | 'missing_genre' | 'missing_year' = 'full'
@@ -58,7 +50,6 @@ export const generateTagsBatch = async (
 
   const fullPrompt = `${systemInstruction}\n\nSchema:\n${JSON.stringify(responseSchema)}\n\nTracks:\n`;
 
-  // --- ATTEMPT 1: ELECTRON BRIDGE ---
   if (window.electron) {
     try {
       const bridgeResults = await window.electron.enrichBatch({ tracks: tracksPayload, prompt: fullPrompt });
@@ -66,12 +57,18 @@ export const generateTagsBatch = async (
       let totalCost = 0, totalIn = 0, totalOut = 0;
 
       bridgeResults.forEach((res: any) => {
-        if (!res.success || !res.data) return;
+        if (!res.success || !res.data) {
+           console.error(`[AI] Processing failed for track ${res.id}: ${res.error}`);
+           return;
+        }
         const usage = res.data.usageMetadata;
         if (usage) {
-           totalIn += usage.promptTokenCount || 0;
-           totalOut += usage.candidatesTokenCount || 0;
-           totalCost += ((totalIn * 0.000000075) + (totalOut * 0.00000030));
+           const inT = usage.promptTokenCount || 0;
+           const outT = usage.candidatesTokenCount || 0;
+           totalIn += inT;
+           totalOut += outT;
+           // Using generic Flash pricing logic
+           totalCost += ((inT * 0.000000075) + (outT * 0.00000030));
         }
         const text = res.data.candidates?.[0]?.content?.parts?.[0]?.text;
         if (text) {
@@ -84,52 +81,15 @@ export const generateTagsBatch = async (
                situation: validateTag(item.situation, SITUATION_TAGS),
                year: item.release_year || item.year || ""
              };
-          } catch (err) {}
+          } catch (err) {
+             console.error(`[AI] JSON Parse error for ${res.id}`);
+          }
         }
       });
-      if (Object.keys(resultsMap).length > 0) return { results: resultsMap, usage: { inputTokens: totalIn, outputTokens: totalOut, cost: totalCost } };
-    } catch (e) {}
-  }
-
-  // --- ATTEMPT 2: BROWSER DIRECT (GitHub Secret via Vite) ---
-  // Try to find the API key in all possible places (process.env, import.meta.env, etc)
-  const API_KEY = (process.env as any).GEMINI_API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY || (window as any).GEMINI_API_KEY;
-
-  if (API_KEY) {
-    const resultsMap: Record<string, AIAnalysis> = {};
-    let totalCost = 0, totalIn = 0, totalOut = 0;
-
-    for (const track of tracksPayload) {
-      try {
-        const response = await axios.post(`${MODEL_URL}?key=${API_KEY}`, {
-          contents: [{ role: 'user', parts: [{ text: fullPrompt + JSON.stringify(track) }] }],
-          generationConfig: { response_mime_type: "application/json", temperature: 0.1 }
-        });
-
-        const data = response.data;
-        const usage = data.usageMetadata;
-        if (usage) {
-           totalIn += usage.promptTokenCount || 0;
-           totalOut += usage.candidatesTokenCount || 0;
-           totalCost += (((usage.promptTokenCount || 0) * 0.000000075) + ((usage.candidatesTokenCount || 0) * 0.00000030));
-        }
-
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (text) {
-          const cleanText = text.replace(/```json/g, '').replace(/```/g, '').trim();
-          const item = JSON.parse(cleanText);
-          resultsMap[track.id] = {
-            vibe: validateTag(item.vibe, VIBE_TAGS),
-            genre: validateTag(item.genre, MICRO_GENRE_TAGS),
-            situation: validateTag(item.situation, SITUATION_TAGS),
-            year: item.release_year || item.year || ""
-          };
-        }
-      } catch (err) {
-        console.error("Direct API fail:", err);
-      }
+      return { results: resultsMap, usage: { inputTokens: totalIn, outputTokens: totalOut, cost: totalCost } };
+    } catch (e) {
+      console.error("[AI] Bridge communication failure:", e);
     }
-    return { results: resultsMap, usage: { inputTokens: totalIn, outputTokens: totalOut, cost: totalCost } };
   }
 
   return { results: {}, usage: { inputTokens: 0, outputTokens: 0, cost: 0 } };

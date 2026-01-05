@@ -1,40 +1,96 @@
-name: Build CrateBatch
+name: Build and Release
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
-  build:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [macos-latest, windows-latest]
-
+  build-macos-intel:
+    runs-on: macos-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
+          cache: 'npm'
 
       - name: Install Dependencies
         run: npm install
 
-      - name: Build React App
-        run: npm run build
+      - name: Create .env from Secret
+        run: echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" > .env
 
-      - name: Build Electron App
-        run: npm run dist
+      - name: Build App (Mac Intel)
+        run: npm run build && npx electron-builder --mac dmg --x64
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload Artifacts
+      - name: Upload Intel Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: CrateBatch-${{ matrix.os }}
-          # THIS IS THE KEY FIX: Look in 'release', not 'dist'
-          path: release/*
+          name: CrateBatch-MacOS-Intel
+          path: release/*.dmg
+
+  build-macos-arm:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Create .env from Secret
+        run: echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" > .env
+
+      - name: Build App (Mac ARM)
+        run: npm run build && npx electron-builder --mac dmg --arm64
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload ARM Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CrateBatch-MacOS-ARM
+          path: release/*.dmg
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Create .env from Secret
+        shell: bash
+        run: echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" > .env
+
+      - name: Build App (Windows)
+        run: npm run build && npx electron-builder --win nsis --x64
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CrateBatch-Windows
+          path: release/*.exe

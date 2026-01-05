@@ -3,15 +3,15 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig(({ mode }) => {
   // Load env file based on `mode` in the current working directory.
-  // This allows it to see GitHub Secrets or IDX Secrets named GEMINI_API_KEY
+  // This picks up variables from .env files AND the system environment (like GitHub Secrets)
   const env = loadEnv(mode, process.cwd(), '');
   
   return {
     plugins: [react()],
     base: './', 
     define: {
-      // This injects the secret into your code at build/dev time
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY || process.env.GEMINI_API_KEY)
+      // Injects the API key into the frontend build
+      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY || process.env.GEMINI_API_KEY || '')
     },
     build: {
       outDir: 'dist',

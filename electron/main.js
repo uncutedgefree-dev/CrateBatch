@@ -4,9 +4,8 @@ const axios = require('axios');
 const fs = require('fs');
 
 // ---------------------------------------------------------
-//  ENV LOADER (Simple .env parser)
+//  ENV LOADER
 // ---------------------------------------------------------
-// This attempts to load .env from project root if GEMINI_API_KEY is missing
 if (!process.env.GEMINI_API_KEY) {
   try {
     const envPath = path.join(__dirname, '..', '.env');
@@ -21,12 +20,12 @@ if (!process.env.GEMINI_API_KEY) {
       console.log('[Main] Loaded configuration from .env file');
     }
   } catch (e) {
-    console.log('[Main] No .env file found or failed to parse');
+    console.log('[Main] No .env file found');
   }
 }
 
-// 🔑 API Key Strategy: Environment Variable -> Fallback Hardcoded (Optional)
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyCdZ3qzImjGv6vXh0_llLpxEroQ_Mu_ufM'; 
+// Priority: System Environment (GitHub Secret) -> process.env
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || ''; 
 
 let mainWindow;
 
@@ -52,14 +51,6 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) createWindow();
-});
-
-// ---------------------------------------------------------
-//  IPC HANDLERS
-// ---------------------------------------------------------
-
 ipcMain.handle('READ_FILE', async (event, filePath) => {
   try {
     const data = fs.readFileSync(filePath, 'utf-8');
@@ -79,52 +70,41 @@ ipcMain.handle('SAVE_FILE', async (event, { filePath, content }) => {
 });
 
 ipcMain.handle('ENRICH_BATCH', async (event, { tracks, prompt }) => {
-  console.log(`[Main] Received ENRICH_BATCH with ${tracks?.length} tracks`);
+  console.log(`[Main] IPC ENRICH_BATCH received: ${tracks?.length} tracks`);
   if (!tracks || tracks.length === 0) return [];
-
+  
   if (!GEMINI_API_KEY) {
-    console.error("[Main] Missing GEMINI_API_KEY environment variable");
-    // Return mock error for all tracks so UI knows
-    return tracks.map(t => ({ 
-      id: t.id || t.TrackID || t.ID, 
-      success: false, 
-      error: "Server Error: Missing API Key" 
-    }));
+    console.error("CRITICAL: GEMINI_API_KEY is missing.");
+    return tracks.map(t => ({ id: t.id, success: false, error: "API Key Missing" }));
   }
 
-  const CONCURRENCY = 50;
+  const CONCURRENCY = 20; 
   const results = [];
   
   const processTrack = async (track) => {
     try {
-      // Using gemini-3-flash as requested
+      // STRICTLY USING GEMINI-3-FLASH
       const response = await axios.post(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash:generateContent?key=${GEMINI_API_KEY}`,
         {
           contents: [{ role: 'user', parts: [{ text: prompt + JSON.stringify(track) }] }],
-          generationConfig: { 
-            response_mime_type: "application/json",
-            temperature: 0.1
-          }
+          generationConfig: { response_mime_type: "application/json", temperature: 0.1 }
         },
-        { timeout: 120000 }
+        { timeout: 60000 }
       );
       
       const trackId = track.id || track.TrackID || track.ID;
       return { id: trackId, data: response.data, success: true };
-
     } catch (err) {
       const trackId = track.id || track.TrackID || track.ID;
       const errMsg = err.response?.data?.error?.message || err.message;
-      console.error(`[Main] Error processing track ${trackId}:`, errMsg);
+      console.error(`[Main] Error for track ${trackId}:`, errMsg);
       return { id: trackId, error: errMsg, success: false };
     }
   };
 
-  // Process in chunks to limit concurrency
   for (let i = 0; i < tracks.length; i += CONCURRENCY) {
     const batch = tracks.slice(i, i + CONCURRENCY);
-    console.log(`[Main] Processing batch subset ${i/CONCURRENCY + 1} of ${Math.ceil(tracks.length/CONCURRENCY)}`);
     const batchResults = await Promise.all(batch.map(processTrack));
     results.push(...batchResults);
   }
