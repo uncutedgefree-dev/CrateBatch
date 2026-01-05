@@ -3,7 +3,7 @@ import { VIBE_TAGS, MICRO_GENRE_TAGS, SITUATION_TAGS } from "./taxonomy";
 
 // NO BUNDLED KEY - SECURE PROXY MODE
 // LIVE PROXY URL from successful deployment
-const FIREBASE_PROXY_URL = "https://us-central1-cratetool.cloudfunctions.net/enrichBatch";
+const FIREBASE_PROXY_URL = "https://enrichbatch-nxf6vuupsq-uc.a.run.app";
 
 export const generateTags = async (track: RekordboxTrack): Promise<AIAnalysis> => {
   const result = await generateTagsBatch([track], 'full');
