@@ -36,15 +36,20 @@ export const generateTagsBatch = async (
     comments: track.Comments || ""
   }));
 
-  const systemInstruction = `Task: Tag the following list of music tracks. 
-  Model: ${MODEL_NAME}.
-  Return a JSON array of objects. 
-  Each object MUST have: "id" (matching the track id), "vibe", "genre", "situation", "release_year".
-  
-  Allowed Values:
-  VIBES: ${VIBE_TAGS.join(', ')}
-  GENRES: ${MICRO_GENRE_TAGS.join(', ')}
-  SITUATIONS: ${SITUATION_TAGS.join(', ')}`;
+  const systemInstruction = `You are an expert music librarian. The current year is 2026.
+Task: Tag the provided list of tracks. 
+Rules:
+1. Identify the ORIGINAL release year. Ignore intro/remaster dates.
+2. 2025 and 2026 are valid. Do NOT hallucinate years beyond 2026.
+3. If uncertain of the year, use "0".
+4. Use ONLY the provided tags. Do NOT make up your own.
+
+VIBES: ${VIBE_TAGS.join(', ')}
+GENRES: ${MICRO_GENRE_TAGS.join(', ')}
+SITUATIONS: ${SITUATION_TAGS.join(', ')}
+
+Return a JSON array of objects. 
+Each object: {"id": "...", "vibe": "...", "genre": "...", "situation": "...", "release_year": "..."}`;
 
   if (window.electron) {
     try {
@@ -84,7 +89,7 @@ export const generateTagsBatch = async (
                       vibe: validateTag(item.vibe, VIBE_TAGS),
                       genre: validateTag(item.genre, MICRO_GENRE_TAGS),
                       situation: validateTag(item.situation, SITUATION_TAGS),
-                      year: (item.release_year || item.year || "").toString()
+                      year: (item.release_year || item.year || "0").toString()
                     };
                   }
                 });

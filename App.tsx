@@ -50,13 +50,6 @@ const App: React.FC = () => {
         return true;
       });
     }
-    if (smartFilter && smartFilter.isSemantic) {
-       result = result.filter(t => {
-          if (smartFilter.genres.length > 0 && !smartFilter.genres.some((g: string) => (t.Genre || "").toLowerCase().includes(g.toLowerCase()))) return false;
-          if (smartFilter.vibes.length > 0 && !smartFilter.vibes.some((v: string) => t.Analysis?.vibe === v)) return false;
-          return true;
-       });
-    }
     const textQuery = smartFilter ? smartFilter.keywords.join(" ") : activeSearchQuery;
     if (textQuery.trim()) {
       const tokens = textQuery.toLowerCase().trim().split(/\s+/);
@@ -96,7 +89,10 @@ const App: React.FC = () => {
     
     setProcessingStats(prev => ({ ...prev, totalSongs: targetTracks.length, songsProcessed: 0, startTime }));
 
-    const chunks = chunkArray<RekordboxTrack>(targetTracks, 100);
+    // Optimized for the Firehose: 50 items per prompt
+    const chunks = chunkArray<RekordboxTrack>(targetTracks, 50);
+    const totalBatches = chunks.length;
+
     const tasks = chunks.map((chunk, idx) => async () => {
       const chunkStart = performance.now();
       const { results, usage, error } = await generateTagsBatch(chunk);
@@ -114,21 +110,23 @@ const App: React.FC = () => {
         currentSpeed: currentSpm
       }));
 
-      const log = formatLogLine(`Batch ${idx+1}/${chunks.length}`, chunk.length, performance.now() - chunkStart, usage, jobCost, currentSpm, error);
+      const log = formatLogLine(`Batch ${idx+1}/${totalBatches}`, chunk.length, performance.now() - chunkStart, usage, jobCost, currentSpm, error);
       setTerminalLog(prev => prev + '\n' + log);
 
       setTracks(prev => prev.map(t => {
         if (!results[t.TrackID]) return t;
         const res = results[t.TrackID];
         if (mode === 'missing_genre') return { ...t, Genre: res.genre, Analysis: res };
-        if (mode === 'missing_year') return { ...t, Year: res.year || t.Year, Analysis: res };
+        if (mode === 'missing_year') return { ...t, Year: (res.year && res.year !== "0") ? res.year : t.Year, Analysis: res };
         return { ...t, Analysis: res };
       }));
 
       chunk.forEach(t => results[t.TrackID] && updateTrackNode(t, results[t.TrackID], mode));
     });
 
-    await runConcurrent(tasks, 4); 
+    // OPEN THE FIREHOSE: 20 Parallel requests
+    await runConcurrent(tasks, 20); 
+    
     setIsEnriching(false);
     setTerminalLog(prev => prev + `\n\n[${new Date().toLocaleTimeString()}] ✅ Job Complete! Total Cost: $${jobCost.toFixed(4)}`);
   };
