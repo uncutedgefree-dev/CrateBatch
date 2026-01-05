@@ -2,7 +2,7 @@ import { RekordboxTrack, AIAnalysis, BatchUsage, SmartFilterCriteria } from "../
 import { VIBE_TAGS, MICRO_GENRE_TAGS, SITUATION_TAGS } from "./taxonomy";
 
 // 1. Model Configuration
-// Using gemini-3-flash as requested
+// User requested gemini-3-flash
 const MODEL_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash:generateContent";
 
 /**
@@ -48,6 +48,7 @@ const validateTag = (tag: string | undefined, allowed: string[]): string => {
 export interface BatchResponse {
   results: Record<string, AIAnalysis>;
   usage: BatchUsage;
+  lastError?: string; // Added to surface errors to UI
 }
 
 export const generateTagsBatch = async (
@@ -93,10 +94,12 @@ export const generateTagsBatch = async (
 
       const resultsMap: Record<string, AIAnalysis> = {};
       let totalCost = 0, totalIn = 0, totalOut = 0;
+      let lastError = "";
 
       bridgeResults.forEach((res: any) => {
         if (!res.success || !res.data) {
            console.warn(`Track ${res.id} failed or has no data:`, res.error);
+           lastError = res.error || "Unknown error";
            return;
         }
 
@@ -128,7 +131,10 @@ export const generateTagsBatch = async (
              }
           } catch (err) {
             console.error("JSON Parse error for track:", res.id, err);
+            lastError = "JSON Parse Error";
           }
+        } else {
+             lastError = "No content in response";
         }
       });
 
@@ -138,7 +144,8 @@ export const generateTagsBatch = async (
           inputTokens: totalIn, 
           outputTokens: totalOut, 
           cost: totalCost 
-        }
+        },
+        lastError: Object.keys(resultsMap).length === 0 ? lastError : undefined
       };
     } catch (e) {
       console.error("Batch processing failed:", e);
@@ -146,11 +153,10 @@ export const generateTagsBatch = async (
     }
   } else {
     console.error("Electron Bridge NOT detected. Falling back to empty response.");
+    return { 
+        results: {}, 
+        usage: { inputTokens: 0, outputTokens: 0, cost: 0 },
+        lastError: "Electron Bridge NOT detected" 
+      };
   }
-
-  // Fallback for non-electron environments
-  return { 
-    results: {}, 
-    usage: { inputTokens: 0, outputTokens: 0, cost: 0 } 
-  };
 };

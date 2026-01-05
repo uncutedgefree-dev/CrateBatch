@@ -3,9 +3,30 @@ const path = require('path');
 const axios = require('axios');
 const fs = require('fs');
 
-// 🔑 PASTE YOUR GEMINI API KEY BELOW
-// Get one here: https://aistudio.google.com/app/apikey
-const GEMINI_API_KEY = 'AIzaSyCdZ3qzImjGv6vXh0_llLpxEroQ_Mu_ufM'; 
+// ---------------------------------------------------------
+//  ENV LOADER (Simple .env parser)
+// ---------------------------------------------------------
+// This attempts to load .env from project root if GEMINI_API_KEY is missing
+if (!process.env.GEMINI_API_KEY) {
+  try {
+    const envPath = path.join(__dirname, '..', '.env');
+    if (fs.existsSync(envPath)) {
+      const envConfig = fs.readFileSync(envPath, 'utf-8');
+      envConfig.split('\n').forEach(line => {
+        const [key, value] = line.split('=');
+        if (key && value) {
+          process.env[key.trim()] = value.trim();
+        }
+      });
+      console.log('[Main] Loaded configuration from .env file');
+    }
+  } catch (e) {
+    console.log('[Main] No .env file found or failed to parse');
+  }
+}
+
+// 🔑 API Key Strategy: Environment Variable -> Fallback Hardcoded (Optional)
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyCdZ3qzImjGv6vXh0_llLpxEroQ_Mu_ufM'; 
 
 let mainWindow;
 
@@ -60,6 +81,16 @@ ipcMain.handle('SAVE_FILE', async (event, { filePath, content }) => {
 ipcMain.handle('ENRICH_BATCH', async (event, { tracks, prompt }) => {
   console.log(`[Main] Received ENRICH_BATCH with ${tracks?.length} tracks`);
   if (!tracks || tracks.length === 0) return [];
+
+  if (!GEMINI_API_KEY) {
+    console.error("[Main] Missing GEMINI_API_KEY environment variable");
+    // Return mock error for all tracks so UI knows
+    return tracks.map(t => ({ 
+      id: t.id || t.TrackID || t.ID, 
+      success: false, 
+      error: "Server Error: Missing API Key" 
+    }));
+  }
 
   const CONCURRENCY = 50;
   const results = [];
