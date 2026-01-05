@@ -1,11 +1,12 @@
 import React from 'react';
-import { useWindowVirtualizer } from '@tanstack/react-virtual';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { RekordboxTrack } from '../types';
 
 interface TrackTableProps {
   tracks: RekordboxTrack[];
   onAnalyzeTrack: (trackId: string) => void;
   analyzingIds: Set<string>;
+  scrollElement: HTMLElement | null;
 }
 
 const GRID_TEMPLATE = "60px 3fr 2fr 1.5fr 60px 70px 70px 70px 2.5fr";
@@ -60,9 +61,10 @@ const TrackRow = React.memo<{
          prev.track.Year === next.track.Year;
 });
 
-const TrackTable: React.FC<TrackTableProps> = ({ tracks, onAnalyzeTrack, analyzingIds }) => {
-  const rowVirtualizer = useWindowVirtualizer({
+const TrackTable: React.FC<TrackTableProps> = ({ tracks, onAnalyzeTrack, analyzingIds, scrollElement }) => {
+  const rowVirtualizer = useVirtualizer({
     count: tracks.length,
+    getScrollElement: () => scrollElement,
     estimateSize: () => 56,
     overscan: 20, 
   });

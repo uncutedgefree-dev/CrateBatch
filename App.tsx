@@ -26,6 +26,7 @@ const App: React.FC = () => {
   const [showPlaylistModal, setShowPlaylistModal] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const fullXmlDataRef = useRef<any>(null);
+  const mainScrollRef = useRef<HTMLElement>(null);
   
   const [processingStats, setProcessingStats] = useState<ProcessingStats>({
     totalCost: 0, totalInputTokens: 0, totalOutputTokens: 0, songsProcessed: 0, 
@@ -231,7 +232,7 @@ const App: React.FC = () => {
           </div>
         )}
       </header>
-      <main className="flex-1 overflow-y-auto overflow-x-hidden no-scrollbar">
+      <main className="flex-1 overflow-y-auto overflow-x-hidden no-scrollbar" ref={mainScrollRef as React.RefObject<HTMLDivElement>}>
         <div className="p-6 flex flex-col min-h-full">
           {status === ParseStatus.IDLE && <div className="flex-1 flex flex-col items-center justify-center mt-20"><h2 className="text-2xl font-bold mb-4">Import Collection</h2><FileUploader onFileSelect={handleFileSelect} isLoading={false} /></div>}
           {status === ParseStatus.SUCCESS && (
@@ -264,7 +265,7 @@ const App: React.FC = () => {
                   onReviewDuplicates={() => setShowDuplicateModal(true)} 
                />
                <div className="flex items-center justify-between"><div className="text-dj-dim text-xs font-mono">Showing {visibleTracks.length} tracks {activeFilterName && `(Filtered: ${activeFilterName})`}</div>{(activeFilterName || activeSearchQuery) && <button onClick={() => setShowPlaylistModal(true)} className="flex items-center gap-1.5 px-3 py-1 bg-green-500/10 border border-green-500 rounded-full text-xs font-bold text-green-500 hover:bg-green-500 hover:text-black"><ListPlus className="w-3 h-3" />Save as Playlist</button>}</div>
-               <TrackTable tracks={visibleTracks} onAnalyzeTrack={handleAnalyzeSingle} analyzingIds={activeProcessingIds} />
+               <TrackTable tracks={visibleTracks} onAnalyzeTrack={handleAnalyzeSingle} analyzingIds={activeProcessingIds} scrollElement={mainScrollRef.current} />
             </div>
           )}
         </div>

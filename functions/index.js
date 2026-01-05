@@ -2,28 +2,30 @@ const { onRequest } = require("firebase-functions/v2/https");
 const logger = require("firebase-functions/logger");
 const axios = require("axios");
 
-// This function will be called from CrateBatch
-// We use the environment variable set in Firebase (NOT baked into the desktop app)
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-
 exports.enrichBatch = onRequest({ 
   cors: true,
   timeoutSeconds: 300,
-  memory: "512Mi"
+  memory: "512Mi",
+  // IMPORTANT: This tells Firebase to inject the secret into this specific function
+  secrets: ["GEMINI_API_KEY"] 
 }, async (request, response) => {
   try {
     const { tracks, prompt } = request.body;
+    
+    // In Gen2 Functions, secrets are accessed via process.env just like standard env vars
+    // BUT they must be declared in the secrets array above!
+    const apiKey = process.env.GEMINI_API_KEY;
 
-    if (!tracks || !prompt || !GEMINI_API_KEY) {
+    if (!tracks || !prompt || !apiKey) {
       response.status(400).send({ 
-        error: !GEMINI_API_KEY ? "Server Key Missing" : "Missing tracks or prompt" 
+        error: !apiKey ? "Server Key Missing (Secrets Not Injected)" : "Missing tracks or prompt" 
       });
       return;
     }
 
     // Process using the secure key
     const aiResponse = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`,
       {
         contents: [{ role: 'user', parts: [{ text: prompt + "\n\nTracks:\n" + JSON.stringify(tracks) }] }],
         generationConfig: { 
