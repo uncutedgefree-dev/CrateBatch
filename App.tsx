@@ -29,7 +29,8 @@ const App: React.FC = () => {
   
   const [processingStats, setProcessingStats] = useState<ProcessingStats>({
     totalCost: 0, totalInputTokens: 0, totalOutputTokens: 0, songsProcessed: 0, 
-    totalSongs: 0, startTime: 0, currentSpeed: 0, etaSeconds: 0, currentBatchLatency: 0
+    totalSongs: 0, startTime: 0, currentSpeed: 0, etaSeconds: 0, currentBatchLatency: 0,
+    totalDuration: 0
   });
 
   const [activeFilterName, setActiveFilterName] = useState<string | null>(null);
@@ -87,8 +88,20 @@ const App: React.FC = () => {
     const startTime = performance.now();
     let jobCost = 0;
     let processedCount = 0;
+    let totalIn = 0;
+    let totalOut = 0;
     
-    setProcessingStats(prev => ({ ...prev, totalSongs: targetTracks.length, songsProcessed: 0, startTime }));
+    setProcessingStats(prev => ({ 
+      ...prev, 
+      totalSongs: targetTracks.length, 
+      songsProcessed: 0, 
+      startTime,
+      totalCost: 0,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      totalDuration: 0,
+      currentSpeed: 0
+    }));
 
     const chunks = chunkArray<RekordboxTrack>(targetTracks, 50);
     const totalBatches = chunks.length;
@@ -104,20 +117,27 @@ const App: React.FC = () => {
       const chunkStart = performance.now();
       const { results, usage, error } = await generateTagsBatch(chunk, mode);
       
+      const chunkDuration = performance.now() - chunkStart;
       jobCost += usage.cost;
       processedCount += chunk.length;
+      totalIn += usage.inputTokens;
+      totalOut += usage.outputTokens;
       
-      const durationSoFar = (performance.now() - startTime) / 60000;
-      const currentSpm = processedCount / (durationSoFar || 1);
+      const durationSoFarMin = (performance.now() - startTime) / 60000;
+      const currentSpm = processedCount / (durationSoFarMin || 0.001);
 
       setProcessingStats(prev => ({
         ...prev,
         songsProcessed: processedCount,
         totalCost: jobCost,
-        currentSpeed: currentSpm
+        totalInputTokens: totalIn,
+        totalOutputTokens: totalOut,
+        currentSpeed: currentSpm,
+        currentBatchLatency: chunkDuration,
+        totalDuration: performance.now() - startTime
       }));
 
-      const log = formatLogLine(`Batch ${idx+1}/${totalBatches}`, chunk.length, performance.now() - chunkStart, usage, jobCost, currentSpm, error);
+      const log = formatLogLine(`Batch ${idx+1}/${totalBatches}`, chunk.length, chunkDuration, usage, jobCost, currentSpm, error);
       setTerminalLog(prev => prev + '\n' + log);
 
       setTracks(prev => prev.map(t => {
@@ -158,6 +178,8 @@ const App: React.FC = () => {
     await runConcurrent(tasks, 3); 
     
     setIsEnriching(false);
+    const finalDuration = performance.now() - startTime;
+    setProcessingStats(prev => ({ ...prev, totalDuration: finalDuration }));
     setTerminalLog(prev => prev + `\n\n[${new Date().toLocaleTimeString()}] ✅ Job Complete! Total Cost: $${jobCost.toFixed(4)}`);
   };
 
@@ -193,7 +215,7 @@ const App: React.FC = () => {
       <header className="flex-none h-16 border-b border-dj-border bg-dj-dark/50 flex items-center justify-between px-6 sticky top-0 z-50 backdrop-blur-md">
         <div className="flex items-center gap-3 w-64">
           <div className="w-3 h-3 rounded-full bg-dj-neon shadow-[0_0_10px_rgba(0,243,255,0.5)]"></div>
-          <h1 className="text-xl font-bold">REKORDBOX <span className="text-dj-neon font-light">ANALYZER</span></h1>
+          <h1 className="text-xl font-bold">CRATE<span className="text-dj-neon font-light">BATCH</span></h1>
         </div>
         {status === ParseStatus.SUCCESS && (
           <div className="flex items-center gap-4">
