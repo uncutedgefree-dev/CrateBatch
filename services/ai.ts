@@ -3,7 +3,6 @@ import { VIBE_TAGS, MICRO_GENRE_TAGS, SITUATION_TAGS } from "./taxonomy";
 
 // Model Configuration - LOCKED TO GEMINI-3-FLASH
 const MODEL_NAME = "gemini-3-flash";
-const MODEL_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent`;
 
 export const generateTags = async (track: RekordboxTrack): Promise<AIAnalysis> => {
   const result = await generateTagsBatch([track], 'full');
@@ -40,6 +39,7 @@ export const generateTagsBatch = async (
   }));
 
   const systemInstruction = `Task: Music Tagging. Return ONLY JSON. 
+  Model Context: ${MODEL_NAME}.
   ONLY use: VIBES: ${VIBE_TAGS.join(', ')}, GENRES: ${MICRO_GENRE_TAGS.join(', ')}, SITUATIONS: ${SITUATION_TAGS.join(', ')}.`;
 
   const responseSchema = {
@@ -67,7 +67,6 @@ export const generateTagsBatch = async (
            const outT = usage.candidatesTokenCount || 0;
            totalIn += inT;
            totalOut += outT;
-           // Using generic Flash pricing logic
            totalCost += ((inT * 0.000000075) + (outT * 0.00000030));
         }
         const text = res.data.candidates?.[0]?.content?.parts?.[0]?.text;
