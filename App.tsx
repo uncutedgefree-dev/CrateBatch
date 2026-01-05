@@ -35,17 +35,11 @@ const App: React.FC = () => {
   const [activeFilterName, setActiveFilterName] = useState<string | null>(null);
   const [dashboardFilter, setDashboardFilter] = useState<{ type: string, value: string } | null>(null);
   const [smartFilter] = useState<any>(null);
-  const [processingTrackIds, setProcessingTrackIds] = useState<string[] | null>(null);
   const [activeProcessingIds, setActiveProcessingIds] = useState<Set<string>>(new Set());
 
   const stats = useMemo(() => calculateLibraryStats(tracks), [tracks]);
 
   const visibleTracks = useMemo(() => {
-    // If we're processing, we want the table to remain stable. 
-    // Do NOT filter the table based on processingTrackIds here if you want to see them in context.
-    // However, the user previously requested that it ONLY show subset being processed if stats are visible.
-    // Let's refine this: If processing is active, we don't want the table to "jump" or "glitch".
-    
     let result = tracks;
     if (dashboardFilter) {
       result = result.filter(t => {
@@ -63,7 +57,7 @@ const App: React.FC = () => {
       result = result.filter(track => tokens.every((token: string) => [track.Name, track.Artist, track.Genre, track.Analysis?.vibe].filter(Boolean).join(" ").toLowerCase().includes(token)));
     }
     return result;
-  }, [tracks, activeSearchQuery, dashboardFilter, smartFilter]); // Removed isStatsVisible/processingTrackIds to keep table stable
+  }, [tracks, activeSearchQuery, dashboardFilter, smartFilter]);
 
   const formatLogLine = (label: string, size: number, durationMs: number, usage: any, runningCost: number, speed: number, error?: string) => {
     const time = new Date().toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -88,7 +82,6 @@ const App: React.FC = () => {
     if (targetTracks.length === 0) return;
     setIsEnriching(true);
     setIsStatsVisible(true);
-    setProcessingTrackIds(targetTracks.map(t => t.TrackID));
     setTerminalLog(`[${new Date().toLocaleTimeString()}] Initializing ${mode} job (${targetTracks.length} items)...`);
     
     const startTime = performance.now();
@@ -223,7 +216,6 @@ const App: React.FC = () => {
                      log={terminalLog} 
                      onClose={() => {
                        setIsStatsVisible(false);
-                       setProcessingTrackIds(null);
                      }} 
                      isProcessing={isEnriching} 
                    />
