@@ -40,7 +40,7 @@ ipcMain.handle('ENRICH_BATCH', async (event, { tracks, prompt }) => {
   if (!tracks || tracks.length === 0) return [];
   if (!GEMINI_API_KEY) return [{ success: false, error: "API Key Missing" }];
 
-  const BATCH_SIZE = 50; // We send 50 tracks in a single prompt
+  const BATCH_SIZE = 50; 
   const results = [];
   
   const processSubBatch = async (subTracks) => {
@@ -49,7 +49,10 @@ ipcMain.handle('ENRICH_BATCH', async (event, { tracks, prompt }) => {
         `https://generativelanguage.googleapis.com/v1/models/gemini-3-flash:generateContent?key=${GEMINI_API_KEY}`,
         {
           contents: [{ role: 'user', parts: [{ text: prompt + "\n\nTracks to analyze:\n" + JSON.stringify(subTracks) }] }],
-          generationConfig: { response_mime_type: "application/json", temperature: 0.1 }
+          generationConfig: { 
+            responseMimeType: "application/json", 
+            temperature: 0.1 
+          }
         },
         { timeout: 120000 }
       );
