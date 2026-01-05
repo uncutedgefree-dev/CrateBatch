@@ -163,7 +163,8 @@ const App: React.FC = () => {
             // ONLY update the Genre field for missing_genre mode
             return { 
               ...t, 
-              Genre: res.genre !== "Unknown" ? res.genre : t.Genre
+              Genre: res.genre !== "Unknown" ? res.genre : t.Genre,
+               Analysis: t.Analysis ? { ...t.Analysis, genre: res.genre } : { genre: res.genre, vibe: 'Unknown', situation: 'Unknown', year: '0' } as AIAnalysis 
               // DO NOT touch Analysis.genre or other fields here
             };
         }
@@ -171,7 +172,8 @@ const App: React.FC = () => {
              // ONLY update the Year field for missing_year mode
              return { 
                 ...t, 
-                Year: (res.year && res.year !== "0") ? res.year : t.Year
+                Year: (res.year && res.year !== "0") ? res.year : t.Year,
+                Analysis: t.Analysis ? { ...t.Analysis, year: res.year } : { genre: 'Unknown', vibe: 'Unknown', situation: 'Unknown', year: res.year } as AIAnalysis 
                 // DO NOT touch Analysis.year or other fields here
               };
         }
@@ -245,14 +247,16 @@ const App: React.FC = () => {
                     // ONLY update the Genre field for missing_genre mode
                     return { 
                       ...t, 
-                      Genre: res.genre !== "Unknown" ? res.genre : t.Genre
+                      Genre: res.genre !== "Unknown" ? res.genre : t.Genre,
+                       Analysis: t.Analysis ? { ...t.Analysis, genre: res.genre } : { genre: res.genre, vibe: 'Unknown', situation: 'Unknown', year: '0' } as AIAnalysis 
                     };
                 }
                 if (mode === 'missing_year') {
                     // ONLY update the Year field for missing_year mode
                      return { 
                         ...t, 
-                        Year: (res.year && res.year !== "0") ? res.year : t.Year
+                        Year: (res.year && res.year !== "0") ? res.year : t.Year,
+                         Analysis: t.Analysis ? { ...t.Analysis, year: res.year } : { genre: 'Unknown', vibe: 'Unknown', situation: 'Unknown', year: res.year } as AIAnalysis 
                       };
                 }
                 
