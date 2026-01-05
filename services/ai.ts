@@ -1,8 +1,6 @@
 import { RekordboxTrack, AIAnalysis, BatchUsage, SmartFilterCriteria } from "../types";
 import { VIBE_TAGS, MICRO_GENRE_TAGS, SITUATION_TAGS } from "./taxonomy";
 
-const MODEL_NAME = "gemini-3-flash-preview";
-
 export const generateTags = async (track: RekordboxTrack): Promise<AIAnalysis> => {
   const result = await generateTagsBatch([track]);
   return result.results[track.TrackID] || { vibe: "Unknown", genre: "Unknown", situation: "Unknown", year: "" };
