@@ -6,12 +6,16 @@ export default defineConfig(({ mode }) => {
   // This picks up variables from .env files AND the system environment (like GitHub Secrets)
   const env = loadEnv(mode, process.cwd(), '');
   
+  // Combine process.env (CI secrets) with .env file variables
+  const GEMINI_API_KEY = env.VITE_GEMINI_API_KEY || env.GEMINI_API_KEY || process.env.GEMINI_API_KEY || '';
+
   return {
     plugins: [react()],
     base: './', 
     define: {
       // Injects the API key into the frontend build
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY || process.env.GEMINI_API_KEY || '')
+      // This ensures import.meta.env.VITE_GEMINI_API_KEY is replaced correctly
+      'import.meta.env.VITE_GEMINI_API_KEY': JSON.stringify(GEMINI_API_KEY)
     },
     build: {
       outDir: 'dist',

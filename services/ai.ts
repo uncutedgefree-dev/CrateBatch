@@ -1,8 +1,9 @@
 import { RekordboxTrack, AIAnalysis, BatchUsage, SmartFilterCriteria } from "../types";
 import { VIBE_TAGS, MICRO_GENRE_TAGS, SITUATION_TAGS } from "./taxonomy";
 
-// This will be injected at build time by Vite from the GitHub Secret
-const BUNDLED_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
+// This will be replaced at build time by Vite from the GitHub Secret
+// It's baked into the binary but handled via the CI/CD pipeline
+const BUNDLED_API_KEY = (import.meta.env.VITE_GEMINI_API_KEY || "").trim();
 
 export const generateTags = async (track: RekordboxTrack): Promise<AIAnalysis> => {
   const result = await generateTagsBatch([track], 'full');
