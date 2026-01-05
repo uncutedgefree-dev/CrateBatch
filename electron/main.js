@@ -45,9 +45,9 @@ ipcMain.handle('ENRICH_BATCH', async (event, { tracks, prompt }) => {
   
   const processSubBatch = async (subTracks) => {
     try {
-      // Reverted to v1beta and response_mime_type
+      // Using gemini-3-flash-preview as requested
       const response = await axios.post(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash:generateContent?key=${GEMINI_API_KEY}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`,
         {
           contents: [{ role: 'user', parts: [{ text: prompt + "\n\nTracks to analyze:\n" + JSON.stringify(subTracks) }] }],
           generationConfig: { 
