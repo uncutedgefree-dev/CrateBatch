@@ -2,11 +2,11 @@ const { onRequest } = require("firebase-functions/v2/https");
 const logger = require("firebase-functions/logger");
 const axios = require("axios");
 
-// 🔒 THE VAULT: API Key stored securely on the server
-const MOZART_API_KEY = 'AIzaSyD3UA7hHSrowzF-fEXTmQoPBOZJ8HZje_c';
+// API Key - Will look for environment variable if available
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyCdZ3qzImjGv6vXh0_llLpxEroQ_Mu_ufM';
 
-// NOTE: Switched to gemini-1.5-flash as gemini-3-flash is not a valid public model ID.
-const MODEL_NAME = "gemini-1.5-flash"; 
+// STRICTLY LOCKED TO GEMINI-3-FLASH
+const MODEL_NAME = "gemini-3-flash"; 
 
 exports.enrichTrack = onRequest({ cors: true }, async (request, response) => {
   try {
@@ -17,9 +17,9 @@ exports.enrichTrack = onRequest({ cors: true }, async (request, response) => {
       return;
     }
 
-    // Call Google Generative AI
+    // Switched to v1 and Locked to gemini-3-flash
     const aiResponse = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${MOZART_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1/models/${MODEL_NAME}:generateContent?key=${GEMINI_API_KEY}`,
       {
         contents: [{ role: 'user', parts: [{ text: prompt + JSON.stringify(track) }] }],
         generationConfig: { 
