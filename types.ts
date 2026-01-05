@@ -2,7 +2,8 @@ export interface AIAnalysis {
   vibe: string;
   genre: string;
   situation: string;
-  year?: string; // Added year
+  year?: string; 
+  hashtags?: string; // New field for pre-formatted hashtags
 }
 
 export interface RekordboxTrack {
