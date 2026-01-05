@@ -1,16 +1,11 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const axios = require('axios');
-const pLimit = require('p-limit');
 const fs = require('fs');
 
-// 🔒 THE VAULT: API Key (Temporary Local Fallback)
-// Since Firebase deployment requires authentication, we will use the key directly here 
-// so you can use the app immediately. 
-// Once you successfully 'firebase deploy', switch this back to the FIREBASE_FUNCTION_URL.
-const MOZART_API_KEY = 'AIzaSyCdZ3qzImjGv6vXh0_llLpxEroQ_Mu_ufM';
-
-// const FIREBASE_FUNCTION_URL = "https://us-central1-cratetool.cloudfunctions.net/enrichTrack"; 
+// 🔑 PASTE YOUR GEMINI API KEY BELOW
+// Get one here: https://aistudio.google.com/app/apikey
+const GEMINI_API_KEY = 'AIzaSyCdZ3qzImjGv6vXh0_llLpxEroQ_Mu_ufM'; 
 
 let mainWindow;
 
@@ -63,16 +58,17 @@ ipcMain.handle('SAVE_FILE', async (event, { filePath, content }) => {
 });
 
 ipcMain.handle('ENRICH_BATCH', async (event, { tracks, prompt }) => {
+  console.log(`[Main] Received ENRICH_BATCH with ${tracks?.length} tracks`);
   if (!tracks || tracks.length === 0) return [];
 
-  const limit = pLimit(50); 
-
-  const tasks = tracks.map((track) => limit(async () => {
+  const CONCURRENCY = 50;
+  const results = [];
+  
+  const processTrack = async (track) => {
     try {
-      // DIRECT GOOGLE API CALL (Fallback)
-      // Using gemini-1.5-flash
+      // Using gemini-3-flash as requested
       const response = await axios.post(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${MOZART_API_KEY}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash:generateContent?key=${GEMINI_API_KEY}`,
         {
           contents: [{ role: 'user', parts: [{ text: prompt + JSON.stringify(track) }] }],
           generationConfig: { 
@@ -89,10 +85,18 @@ ipcMain.handle('ENRICH_BATCH', async (event, { tracks, prompt }) => {
     } catch (err) {
       const trackId = track.id || track.TrackID || track.ID;
       const errMsg = err.response?.data?.error?.message || err.message;
-      console.error(`Error processing track ${trackId}:`, errMsg);
+      console.error(`[Main] Error processing track ${trackId}:`, errMsg);
       return { id: trackId, error: errMsg, success: false };
     }
-  }));
+  };
 
-  return await Promise.all(tasks);
+  // Process in chunks to limit concurrency
+  for (let i = 0; i < tracks.length; i += CONCURRENCY) {
+    const batch = tracks.slice(i, i + CONCURRENCY);
+    console.log(`[Main] Processing batch subset ${i/CONCURRENCY + 1} of ${Math.ceil(tracks.length/CONCURRENCY)}`);
+    const batchResults = await Promise.all(batch.map(processTrack));
+    results.push(...batchResults);
+  }
+
+  return results;
 });

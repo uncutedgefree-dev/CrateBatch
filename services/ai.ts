@@ -2,6 +2,7 @@ import { RekordboxTrack, AIAnalysis, BatchUsage, SmartFilterCriteria } from "../
 import { VIBE_TAGS, MICRO_GENRE_TAGS, SITUATION_TAGS } from "./taxonomy";
 
 // 1. Model Configuration
+// Using gemini-3-flash as requested
 const MODEL_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash:generateContent";
 
 /**
@@ -83,16 +84,21 @@ export const generateTagsBatch = async (
     const fullPrompt = `${systemInstruction}\n\nSchema:\n${JSON.stringify(responseSchema)}\n\nTracks:\n`;
     
     try {
+      console.log(`Sending ${tracksPayload.length} tracks to Electron Bridge...`);
       const bridgeResults = await window.electron.enrichBatch({
         tracks: tracksPayload,
         prompt: fullPrompt
       });
+      console.log(`Received ${bridgeResults.length} results from Electron Bridge.`);
 
       const resultsMap: Record<string, AIAnalysis> = {};
       let totalCost = 0, totalIn = 0, totalOut = 0;
 
       bridgeResults.forEach((res: any) => {
-        if (!res.success || !res.data) return;
+        if (!res.success || !res.data) {
+           console.warn(`Track ${res.id} failed or has no data:`, res.error);
+           return;
+        }
 
         // Process Usage Metadata
         const usage = res.data.usageMetadata;
@@ -138,6 +144,8 @@ export const generateTagsBatch = async (
       console.error("Batch processing failed:", e);
       throw e;
     }
+  } else {
+    console.error("Electron Bridge NOT detected. Falling back to empty response.");
   }
 
   // Fallback for non-electron environments
