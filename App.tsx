@@ -89,19 +89,19 @@ const App: React.FC = () => {
     
     setProcessingStats(prev => ({ ...prev, totalSongs: targetTracks.length, songsProcessed: 0, startTime }));
 
-    // Optimized for the Firehose: 50 items per prompt
+    // Optimized: 50 items per prompt
     const chunks = chunkArray<RekordboxTrack>(targetTracks, 50);
     const totalBatches = chunks.length;
 
     const tasks = chunks.map((chunk, idx) => async () => {
       const chunkStart = performance.now();
-      const { results, usage, error } = await generateTagsBatch(chunk);
+      const { results, usage, error } = await generateTagsBatch(chunk, mode);
       
       jobCost += usage.cost;
       processedCount += chunk.length;
       
       const durationSoFar = (performance.now() - startTime) / 60000;
-      const currentSpm = processedCount / durationSoFar;
+      const currentSpm = processedCount / (durationSoFar || 1);
 
       setProcessingStats(prev => ({
         ...prev,
@@ -116,16 +116,16 @@ const App: React.FC = () => {
       setTracks(prev => prev.map(t => {
         if (!results[t.TrackID]) return t;
         const res = results[t.TrackID];
-        if (mode === 'missing_genre') return { ...t, Genre: res.genre, Analysis: res };
-        if (mode === 'missing_year') return { ...t, Year: (res.year && res.year !== "0") ? res.year : t.Year, Analysis: res };
+        if (mode === 'missing_genre') return { ...t, Genre: res.genre, Analysis: { ...(t.Analysis || {}), ...res } as any };
+        if (mode === 'missing_year') return { ...t, Year: (res.year && res.year !== "0") ? res.year : t.Year, Analysis: { ...(t.Analysis || {}), ...res } as any };
         return { ...t, Analysis: res };
       }));
 
       chunk.forEach(t => results[t.TrackID] && updateTrackNode(t, results[t.TrackID], mode));
     });
 
-    // OPEN THE FIREHOSE: 20 Parallel requests
-    await runConcurrent(tasks, 20); 
+    // Using 3 parallel requests for stability
+    await runConcurrent(tasks, 3); 
     
     setIsEnriching(false);
     setTerminalLog(prev => prev + `\n\n[${new Date().toLocaleTimeString()}] ✅ Job Complete! Total Cost: $${jobCost.toFixed(4)}`);

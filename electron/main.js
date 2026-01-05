@@ -45,7 +45,8 @@ ipcMain.handle('ENRICH_BATCH', async (event, { tracks, prompt }) => {
   
   const processSubBatch = async (subTracks) => {
     try {
-      // Using gemini-3-flash-preview as requested
+      // Using gemini-3-flash-preview as requested. 
+      // Increased timeout to 5 minutes to handle large batches and potential API congestion.
       const response = await axios.post(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`,
         {
@@ -55,7 +56,7 @@ ipcMain.handle('ENRICH_BATCH', async (event, { tracks, prompt }) => {
             temperature: 0.1 
           }
         },
-        { timeout: 120000 }
+        { timeout: 300000 }
       );
       return { success: true, data: response.data };
     } catch (err) {

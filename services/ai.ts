@@ -2,7 +2,7 @@ import { RekordboxTrack, AIAnalysis, BatchUsage, SmartFilterCriteria } from "../
 import { VIBE_TAGS, MICRO_GENRE_TAGS, SITUATION_TAGS } from "./taxonomy";
 
 export const generateTags = async (track: RekordboxTrack): Promise<AIAnalysis> => {
-  const result = await generateTagsBatch([track]);
+  const result = await generateTagsBatch([track], 'full');
   return result.results[track.TrackID] || { vibe: "Unknown", genre: "Unknown", situation: "Unknown", year: "" };
 };
 
@@ -23,7 +23,8 @@ export interface BatchResponse {
 }
 
 export const generateTagsBatch = async (
-  tracks: RekordboxTrack[]
+  tracks: RekordboxTrack[],
+  mode: 'full' | 'missing_genre' | 'missing_year' = 'full'
 ): Promise<BatchResponse> => {
   const tracksPayload = tracks.map(track => ({
     id: track.TrackID,
@@ -34,8 +35,29 @@ export const generateTagsBatch = async (
     comments: track.Comments || ""
   }));
 
-  const systemInstruction = `You are an expert music librarian. The current year is 2026.
-Task: Tag the provided list of tracks. 
+  let systemInstruction = `You are an expert music librarian. The current year is 2026.
+Task: Analyze the provided list of tracks.`;
+
+  if (mode === 'missing_year') {
+    systemInstruction += `
+Rules:
+1. Identify the ORIGINAL release year. Ignore intro/remaster dates.
+2. 2025 and 2026 are valid. Do NOT hallucinate years beyond 2026.
+3. If uncertain of the year, use "0".
+
+Return a JSON array of objects. 
+Each object: {"id": "...", "release_year": "..."}`;
+  } else if (mode === 'missing_genre') {
+    systemInstruction += `
+Rules:
+1. Use ONLY the provided tags. Do NOT make up your own.
+
+GENRES: ${MICRO_GENRE_TAGS.join(', ')}
+
+Return a JSON array of objects. 
+Each object: {"id": "...", "genre": "..."}`;
+  } else {
+    systemInstruction += `
 Rules:
 1. Identify the ORIGINAL release year. Ignore intro/remaster dates.
 2. 2025 and 2026 are valid. Do NOT hallucinate years beyond 2026.
@@ -48,6 +70,7 @@ SITUATIONS: ${SITUATION_TAGS.join(', ')}
 
 Return a JSON array of objects. 
 Each object: {"id": "...", "vibe": "...", "genre": "...", "situation": "...", "release_year": "..."}`;
+  }
 
   if (window.electron) {
     try {
