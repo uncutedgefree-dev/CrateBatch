@@ -1,14 +1,10 @@
 import { RekordboxTrack, AIAnalysis, BatchUsage, SmartFilterCriteria } from "../types";
 import { VIBE_TAGS, MICRO_GENRE_TAGS, SITUATION_TAGS } from "./taxonomy";
+import axios from 'axios';
 
 // 1. Model Configuration
-// User requested gemini-3-flash
 const MODEL_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash:generateContent";
 
-/**
- * 2. SINGLE TRACK ENRICHMENT
- * Required by App.tsx
- */
 export const generateTags = async (track: RekordboxTrack): Promise<AIAnalysis> => {
   const result = await generateTagsBatch([track], 'full');
   return result.results[track.TrackID] || { 
@@ -19,38 +15,24 @@ export const generateTags = async (track: RekordboxTrack): Promise<AIAnalysis> =
   };
 };
 
-/**
- * 3. SEMANTIC SEARCH INTERPRETATION
- * Required by App.tsx
- */
 export const interpretSearchQuery = async (query: string): Promise<SmartFilterCriteria> => {
-  // Simple pass-through as search is keyword-based in the UI for now
-  return {
-    genres: [],
-    vibes: [],
-    situations: [],
-    keywords: [query],
-    isSemantic: false
-  };
+  return { genres: [], vibes: [], situations: [], keywords: [query], isSemantic: false };
 };
 
-// Internal helper for tag validation
 const validateTag = (tag: string | undefined, allowed: string[]): string => {
   if (!tag) return "Unknown";
   const match = allowed.find(t => t.toLowerCase() === tag.trim().toLowerCase());
   return match || "Unknown";
 };
 
-/**
- * 4. BATCH PROCESSING ENGINE
- * Uses gemini-3-flash via Electron IPC
- */
 export interface BatchResponse {
   results: Record<string, AIAnalysis>;
   usage: BatchUsage;
-  lastError?: string; // Added to surface errors to UI
 }
 
+/**
+ * 4. BATCH PROCESSING ENGINE
+ */
 export const generateTagsBatch = async (
   tracks: RekordboxTrack[], 
   mode: 'full' | 'missing_genre' | 'missing_year' = 'full'
@@ -62,101 +44,93 @@ export const generateTagsBatch = async (
     bpm: track.AverageBpm,
     key: track.Tonality,
     comments: track.Comments || "",
-    request_mode: mode // Using 'mode' to satisfy compiler
+    request_mode: mode
   }));
 
-  const systemInstruction = `Task: Music Tagging. 
-  URL Context: ${MODEL_URL} 
-  ONLY use: VIBES: ${VIBE_TAGS.join(', ')}, GENRES: ${MICRO_GENRE_TAGS.join(', ')}, SITUATIONS: ${SITUATION_TAGS.join(', ')}.
-  Return ONLY JSON.`;
+  const systemInstruction = `Task: Music Tagging. Return ONLY JSON. 
+  ONLY use: VIBES: ${VIBE_TAGS.join(', ')}, GENRES: ${MICRO_GENRE_TAGS.join(', ')}, SITUATIONS: ${SITUATION_TAGS.join(', ')}.`;
 
   const responseSchema = {
     type: "OBJECT",
-    properties: {
-      vibe: { type: "STRING" },
-      genre: { type: "STRING" },
-      situation: { type: "STRING" },
-      release_year: { type: "STRING" }
-    },
+    properties: { vibe: { type: "STRING" }, genre: { type: "STRING" }, situation: { type: "STRING" }, release_year: { type: "STRING" } },
     required: ["vibe", "genre", "situation"]
   };
 
-  if (window.electron) {
-    const fullPrompt = `${systemInstruction}\n\nSchema:\n${JSON.stringify(responseSchema)}\n\nTracks:\n`;
-    
-    try {
-      console.log(`Sending ${tracksPayload.length} tracks to Electron Bridge...`);
-      const bridgeResults = await window.electron.enrichBatch({
-        tracks: tracksPayload,
-        prompt: fullPrompt
-      });
-      console.log(`Received ${bridgeResults.length} results from Electron Bridge.`);
+  const fullPrompt = `${systemInstruction}\n\nSchema:\n${JSON.stringify(responseSchema)}\n\nTracks:\n`;
 
+  // --- ATTEMPT 1: ELECTRON BRIDGE ---
+  if (window.electron) {
+    try {
+      const bridgeResults = await window.electron.enrichBatch({ tracks: tracksPayload, prompt: fullPrompt });
       const resultsMap: Record<string, AIAnalysis> = {};
       let totalCost = 0, totalIn = 0, totalOut = 0;
-      let lastError = "";
 
       bridgeResults.forEach((res: any) => {
-        if (!res.success || !res.data) {
-           console.warn(`Track ${res.id} failed or has no data:`, res.error);
-           lastError = res.error || "Unknown error";
-           return;
-        }
-
-        // Process Usage Metadata
+        if (!res.success || !res.data) return;
         const usage = res.data.usageMetadata;
         if (usage) {
-           const inTok = usage.promptTokenCount || 0;
-           const outTok = usage.candidatesTokenCount || 0;
-           totalIn += inTok;
-           totalOut += outTok;
-           // Flash Pricing: $0.075/1M input, $0.30/1M output
-           totalCost += ((inTok * 0.000000075) + (outTok * 0.00000030));
+           totalIn += usage.promptTokenCount || 0;
+           totalOut += usage.candidatesTokenCount || 0;
+           totalCost += ((totalIn * 0.000000075) + (totalOut * 0.00000030));
         }
-
-        // Process AI Response Content
         const text = res.data.candidates?.[0]?.content?.parts?.[0]?.text;
         if (text) {
           try {
              const cleanText = text.replace(/```json/g, '').replace(/```/g, '').trim();
              const item = JSON.parse(cleanText);
-
-             if (item) {
-               resultsMap[res.id] = {
-                 vibe: validateTag(item.vibe, VIBE_TAGS),
-                 genre: validateTag(item.genre, MICRO_GENRE_TAGS),
-                 situation: validateTag(item.situation, SITUATION_TAGS),
-                 year: item.release_year || item.year || ""
-               };
-             }
-          } catch (err) {
-            console.error("JSON Parse error for track:", res.id, err);
-            lastError = "JSON Parse Error";
-          }
-        } else {
-             lastError = "No content in response";
+             resultsMap[res.id] = {
+               vibe: validateTag(item.vibe, VIBE_TAGS),
+               genre: validateTag(item.genre, MICRO_GENRE_TAGS),
+               situation: validateTag(item.situation, SITUATION_TAGS),
+               year: item.release_year || item.year || ""
+             };
+          } catch (err) {}
         }
       });
-
-      return {
-        results: resultsMap,
-        usage: { 
-          inputTokens: totalIn, 
-          outputTokens: totalOut, 
-          cost: totalCost 
-        },
-        lastError: Object.keys(resultsMap).length === 0 ? lastError : undefined
-      };
-    } catch (e) {
-      console.error("Batch processing failed:", e);
-      throw e;
-    }
-  } else {
-    console.error("Electron Bridge NOT detected. Falling back to empty response.");
-    return { 
-        results: {}, 
-        usage: { inputTokens: 0, outputTokens: 0, cost: 0 },
-        lastError: "Electron Bridge NOT detected" 
-      };
+      if (Object.keys(resultsMap).length > 0) return { results: resultsMap, usage: { inputTokens: totalIn, outputTokens: totalOut, cost: totalCost } };
+    } catch (e) {}
   }
+
+  // --- ATTEMPT 2: BROWSER DIRECT (GitHub Secret via Vite) ---
+  // Try to find the API key in all possible places (process.env, import.meta.env, etc)
+  const API_KEY = (process.env as any).GEMINI_API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY || (window as any).GEMINI_API_KEY;
+
+  if (API_KEY) {
+    const resultsMap: Record<string, AIAnalysis> = {};
+    let totalCost = 0, totalIn = 0, totalOut = 0;
+
+    for (const track of tracksPayload) {
+      try {
+        const response = await axios.post(`${MODEL_URL}?key=${API_KEY}`, {
+          contents: [{ role: 'user', parts: [{ text: fullPrompt + JSON.stringify(track) }] }],
+          generationConfig: { response_mime_type: "application/json", temperature: 0.1 }
+        });
+
+        const data = response.data;
+        const usage = data.usageMetadata;
+        if (usage) {
+           totalIn += usage.promptTokenCount || 0;
+           totalOut += usage.candidatesTokenCount || 0;
+           totalCost += (((usage.promptTokenCount || 0) * 0.000000075) + ((usage.candidatesTokenCount || 0) * 0.00000030));
+        }
+
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (text) {
+          const cleanText = text.replace(/```json/g, '').replace(/```/g, '').trim();
+          const item = JSON.parse(cleanText);
+          resultsMap[track.id] = {
+            vibe: validateTag(item.vibe, VIBE_TAGS),
+            genre: validateTag(item.genre, MICRO_GENRE_TAGS),
+            situation: validateTag(item.situation, SITUATION_TAGS),
+            year: item.release_year || item.year || ""
+          };
+        }
+      } catch (err) {
+        console.error("Direct API fail:", err);
+      }
+    }
+    return { results: resultsMap, usage: { inputTokens: totalIn, outputTokens: totalOut, cost: totalCost } };
+  }
+
+  return { results: {}, usage: { inputTokens: 0, outputTokens: 0, cost: 0 } };
 };
