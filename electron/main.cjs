@@ -3,18 +3,35 @@ const path = require('path');
 const axios = require('axios');
 const fs = require('fs');
 
-if (!process.env.GEMINI_API_KEY) {
-  try {
-    const envPath = path.join(__dirname, '..', '.env');
-    if (fs.existsSync(envPath)) {
-      const envConfig = fs.readFileSync(envPath, 'utf-8');
-      envConfig.split('\n').forEach(line => {
-        const [key, value] = line.split('=');
-        if (key && value) process.env[key.trim()] = value.trim();
-      });
+function loadEnv() {
+  const possiblePaths = [
+    path.join(__dirname, '..', '.env'), // Development
+    path.join(process.resourcesPath, '.env'), // Packaged (outside ASAR)
+    path.join(app.getPath('userData'), '.env'), // User Data Folder
+  ];
+
+  for (const envPath of possiblePaths) {
+    try {
+      if (fs.existsSync(envPath)) {
+        const envConfig = fs.readFileSync(envPath, 'utf-8');
+        envConfig.split('\n').forEach(line => {
+          const [key, ...valueParts] = line.split('=');
+          if (key && valueParts.length > 0) {
+            const value = valueParts.join('=').trim();
+            process.env[key.trim()] = value;
+          }
+        });
+        console.log(`Loaded env from: ${envPath}`);
+        break; // Stop after first successful load
+      }
+    } catch (e) {
+      console.error(`Error loading env from ${envPath}:`, e);
     }
-  } catch (e) {}
+  }
 }
+
+// Load env before anything else
+loadEnv();
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || ''; 
 
@@ -23,8 +40,14 @@ let mainWindow;
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200, height: 800, title: "CrateBatch",
-    webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false }
+    webPreferences: { 
+      preload: path.join(__dirname, 'preload.cjs'), 
+      contextIsolation: true, 
+      nodeIntegration: false 
+    }
   });
+  
+  // In production, the dist/index.html is inside the asar
   const startUrl = process.env.ELECTRON_START_URL || `file://${path.join(__dirname, '../dist/index.html')}`;
   mainWindow.loadURL(startUrl);
 }
@@ -32,23 +55,30 @@ function createWindow() {
 app.whenReady().then(createWindow);
 
 ipcMain.handle('READ_FILE', async (event, filePath) => {
-  try { return { success: true, data: fs.readFileSync(filePath, 'utf-8') }; }
-  catch (error) { return { success: false, error: error.message }; }
+  try { 
+    return { success: true, data: fs.readFileSync(filePath, 'utf-8') }; 
+  } catch (error) { 
+    return { success: false, error: error.message }; 
+  }
 });
 
 ipcMain.handle('ENRICH_BATCH', async (event, { tracks, prompt }) => {
   if (!tracks || tracks.length === 0) return [];
-  if (!GEMINI_API_KEY) return [{ success: false, error: "API Key Missing" }];
+  
+  // Try one last time to get the key from env in case it was set late
+  const apiKey = process.env.GEMINI_API_KEY || GEMINI_API_KEY;
+  
+  if (!apiKey) {
+    return [{ success: false, error: "API Key Missing. Please check your .env file." }];
+  }
 
   const BATCH_SIZE = 50; 
   const results = [];
   
   const processSubBatch = async (subTracks) => {
     try {
-      // Using gemini-3-flash-preview as requested. 
-      // Increased timeout to 5 minutes to handle large batches and potential API congestion.
       const response = await axios.post(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`,
         {
           contents: [{ role: 'user', parts: [{ text: prompt + "\n\nTracks to analyze:\n" + JSON.stringify(subTracks) }] }],
           generationConfig: { 
