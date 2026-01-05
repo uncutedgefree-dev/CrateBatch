@@ -1,6 +1,5 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
-const axios = require('axios');
 const fs = require('fs');
 
 function loadEnv() {
@@ -33,8 +32,6 @@ function loadEnv() {
 // Load env before anything else
 loadEnv();
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || ''; 
-
 let mainWindow;
 
 function createWindow() {
@@ -62,45 +59,8 @@ ipcMain.handle('READ_FILE', async (event, filePath) => {
   }
 });
 
-ipcMain.handle('ENRICH_BATCH', async (event, { tracks, prompt, apiKey }) => {
-  if (!tracks || tracks.length === 0) return [];
-  
-  // Use the key passed from the UI (which is baked-in via Vite)
-  // or fall back to the local .env key (for local dev)
-  const finalKey = apiKey || process.env.GEMINI_API_KEY || GEMINI_API_KEY;
-  
-  if (!finalKey) {
-    return [{ success: false, error: "API Key Missing. Please check your GitHub Secrets or .env file." }];
-  }
-
-  const BATCH_SIZE = 50; 
-  const results = [];
-  
-  const processSubBatch = async (subTracks) => {
-    try {
-      const response = await axios.post(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${finalKey}`,
-        {
-          contents: [{ role: 'user', parts: [{ text: prompt + "\n\nTracks to analyze:\n" + JSON.stringify(subTracks) }] }],
-          generationConfig: { 
-            response_mime_type: "application/json", 
-            temperature: 0.1 
-          }
-        },
-        { timeout: 300000 }
-      );
-      return { success: true, data: response.data };
-    } catch (err) {
-      const msg = err.response?.data?.error?.message || err.message;
-      return { success: false, error: msg };
-    }
-  };
-
-  for (let i = 0; i < tracks.length; i += BATCH_SIZE) {
-    const subBatch = tracks.slice(i, i + BATCH_SIZE);
-    const result = await processSubBatch(subBatch);
-    results.push(result);
-  }
-
-  return results;
+// Since we are using the Cloud Function proxy, we don't need local AI processing in the main process anymore.
+// However, we keep the IPC structure in case we want to move logic back to the main process later.
+ipcMain.handle('ENRICH_BATCH', async (event, payload) => {
+   return { success: false, error: "This function is deprecated. Please use the Cloud Function proxy." };
 });
