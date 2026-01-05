@@ -21,12 +21,8 @@ exports.enrichBatch = onRequest({
 
     const genAI = new GoogleGenerativeAI(apiKey);
     
-    // User requested "gemini-3-flash". Assuming this refers to the latest experimental flash model (Gemini 2.0 Flash)
-    // or a specific preview model. 
-    // If "gemini-3-flash-preview" was the intent, we use that.
-    // However, the most reliable "next-gen" flash model currently available via API is "gemini-2.0-flash-exp".
-    // We will attempt to use "gemini-2.0-flash-exp". 
-    const modelName = "gemini-2.0-flash-exp";
+    // Explicitly using the requested preview model
+    const modelName = "gemini-3-flash-preview";
     
     const model = genAI.getGenerativeModel({ 
       model: modelName, 
@@ -48,14 +44,10 @@ exports.enrichBatch = onRequest({
   } catch (error) {
     logger.error(`Batch AI Error (${process.env.GEMINI_API_KEY ? 'Key Present' : 'Key Missing'})`, error);
     
-    // Helper to extract meaningful error message
     const msg = error.message || "Unknown Error";
-    
-    // If the model is not found, it might be a region or access issue.
-    // We pass this detail back to the client.
     response.status(500).send({ 
       success: false, 
-      error: msg.includes("404") ? `Model not found: ${msg}` : msg 
+      error: msg.includes("404") ? `Model '${modelName}' not found or not accessible.` : msg 
     });
   }
 });
