@@ -22,13 +22,12 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
-      - name: Create .env from Secret
-        run: echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" > .env
-
       - name: Build App (Mac Intel)
         run: npm run build && npx electron-builder --mac dmg --x64
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          VITE_GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
       - name: Upload Intel Artifact
         uses: actions/upload-artifact@v4
@@ -51,13 +50,12 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
-      - name: Create .env from Secret
-        run: echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" > .env
-
       - name: Build App (Mac ARM)
         run: npm run build && npx electron-builder --mac dmg --arm64
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          VITE_GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
       - name: Upload ARM Artifact
         uses: actions/upload-artifact@v4
@@ -80,14 +78,12 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
-      - name: Create .env from Secret
-        shell: bash
-        run: echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" > .env
-
       - name: Build App (Windows)
         run: npm run build && npx electron-builder --win nsis --x64
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          VITE_GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
       - name: Upload Windows Artifact
         uses: actions/upload-artifact@v4
