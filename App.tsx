@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { ListPlus, CheckCircle } from 'lucide-react';
 import FileUploader from './components/FileUploader';
 import TrackTable from './components/TrackTable';
@@ -8,7 +8,7 @@ import ProcessingStatsDisplay from './components/ProcessingStats';
 import EnrichmentWarningModal from './components/EnrichmentWarningModal';
 import PlaylistNameModal from './components/PlaylistNameModal';
 import { parseRekordboxXML, exportRekordboxXML, updateTrackNode, generateSmartPlaylists } from './services/parser';
-import { generateTagsBatch, interpretSearchQuery } from './services/ai';
+import { generateTagsBatch } from './services/ai';
 import { chunkArray, calculateLibraryStats, findDuplicates, runConcurrent } from './services/utils';
 import { RekordboxTrack, ParseStatus, ProcessingStats, CustomPlaylist } from './types';
 
@@ -34,7 +34,7 @@ const App: React.FC = () => {
 
   const [activeFilterName, setActiveFilterName] = useState<string | null>(null);
   const [dashboardFilter, setDashboardFilter] = useState<{ type: string, value: string } | null>(null);
-  const [smartFilter, setSmartFilter] = useState<any>(null);
+  const [smartFilter] = useState<any>(null);
 
   const stats = useMemo(() => calculateLibraryStats(tracks), [tracks]);
 
@@ -50,6 +50,13 @@ const App: React.FC = () => {
         return true;
       });
     }
+    if (smartFilter && smartFilter.isSemantic) {
+       result = result.filter(t => {
+          if (smartFilter.genres.length > 0 && !smartFilter.genres.some((g: string) => (t.Genre || "").toLowerCase().includes(g.toLowerCase()))) return false;
+          if (smartFilter.vibes.length > 0 && !smartFilter.vibes.some((v: string) => t.Analysis?.vibe === v)) return false;
+          return true;
+       });
+    }
     const textQuery = smartFilter ? smartFilter.keywords.join(" ") : activeSearchQuery;
     if (textQuery.trim()) {
       const tokens = textQuery.toLowerCase().trim().split(/\s+/);
@@ -62,6 +69,19 @@ const App: React.FC = () => {
     const time = new Date().toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
     const costStr = error ? `ERR: ${error.slice(0, 15)}` : `+$${usage.cost.toFixed(4)} (Tot: $${runningCost.toFixed(4)})`;
     return `[${time}] ${label.padEnd(12)} | ${size.toString().padEnd(3)} items | ${(durationMs/1000).toFixed(1)}s | ${Math.round(speed)} spm | ${costStr}`;
+  };
+
+  const handleFileSelect = async (file: File) => {
+    setStatus(ParseStatus.PARSING);
+    if (window.electron && (file as any).path) {
+       const { success, data } = await window.electron.readFile((file as any).path);
+       if (success && data) {
+         const result = await parseRekordboxXML(data);
+         setTracks(result.tracks);
+         fullXmlDataRef.current = result.fullData; 
+         setStatus(ParseStatus.SUCCESS);
+       }
+    }
   };
 
   const processBatch = async (targetTracks: RekordboxTrack[], mode: 'full' | 'missing_genre' | 'missing_year') => {
@@ -100,7 +120,6 @@ const App: React.FC = () => {
       setTracks(prev => prev.map(t => {
         if (!results[t.TrackID]) return t;
         const res = results[t.TrackID];
-        // Correctly apply missing data
         if (mode === 'missing_genre') return { ...t, Genre: res.genre, Analysis: res };
         if (mode === 'missing_year') return { ...t, Year: res.year || t.Year, Analysis: res };
         return { ...t, Analysis: res };
@@ -109,22 +128,9 @@ const App: React.FC = () => {
       chunk.forEach(t => results[t.TrackID] && updateTrackNode(t, results[t.TrackID], mode));
     });
 
-    await runConcurrent(tasks, 4); // Increased firehose: 4 parallel batches of 100
+    await runConcurrent(tasks, 4); 
     setIsEnriching(false);
     setTerminalLog(prev => prev + `\n\n[${new Date().toLocaleTimeString()}] ✅ Job Complete! Total Cost: $${jobCost.toFixed(4)}`);
-  };
-
-  const handleFileSelect = async (file: File) => {
-    setStatus(ParseStatus.PARSING);
-    if (window.electron && (file as any).path) {
-       const { success, data } = await window.electron.readFile((file as any).path);
-       if (success && data) {
-         const result = await parseRekordboxXML(data);
-         setTracks(result.tracks);
-         fullXmlDataRef.current = result.fullData; 
-         setStatus(ParseStatus.SUCCESS);
-       }
-    }
   };
 
   const handleExport = () => {
