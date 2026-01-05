@@ -91,8 +91,7 @@ const App: React.FC = () => {
     let totalIn = 0;
     let totalOut = 0;
     
-    setProcessingStats(prev => ({ 
-      ...prev, 
+    setProcessingStats({ 
       totalSongs: targetTracks.length, 
       songsProcessed: 0, 
       startTime,
@@ -100,8 +99,10 @@ const App: React.FC = () => {
       totalInputTokens: 0,
       totalOutputTokens: 0,
       totalDuration: 0,
-      currentSpeed: 0
-    }));
+      currentSpeed: 0,
+      etaSeconds: 0,
+      currentBatchLatency: 0
+    });
 
     const chunks = chunkArray<RekordboxTrack>(targetTracks, 50);
     const totalBatches = chunks.length;
@@ -125,6 +126,9 @@ const App: React.FC = () => {
       
       const durationSoFarMin = (performance.now() - startTime) / 60000;
       const currentSpm = processedCount / (durationSoFarMin || 0.001);
+      
+      const remainingSongs = targetTracks.length - processedCount;
+      const etaSec = (remainingSongs / (currentSpm || 1)) * 60;
 
       setProcessingStats(prev => ({
         ...prev,
@@ -134,7 +138,8 @@ const App: React.FC = () => {
         totalOutputTokens: totalOut,
         currentSpeed: currentSpm,
         currentBatchLatency: chunkDuration,
-        totalDuration: performance.now() - startTime
+        totalDuration: performance.now() - startTime,
+        etaSeconds: etaSec
       }));
 
       const log = formatLogLine(`Batch ${idx+1}/${totalBatches}`, chunk.length, chunkDuration, usage, jobCost, currentSpm, error);
@@ -179,7 +184,7 @@ const App: React.FC = () => {
     
     setIsEnriching(false);
     const finalDuration = performance.now() - startTime;
-    setProcessingStats(prev => ({ ...prev, totalDuration: finalDuration }));
+    setProcessingStats(prev => ({ ...prev, totalDuration: finalDuration, etaSeconds: 0 }));
     setTerminalLog(prev => prev + `\n\n[${new Date().toLocaleTimeString()}] ✅ Job Complete! Total Cost: $${jobCost.toFixed(4)}`);
   };
 
