@@ -62,14 +62,15 @@ ipcMain.handle('READ_FILE', async (event, filePath) => {
   }
 });
 
-ipcMain.handle('ENRICH_BATCH', async (event, { tracks, prompt }) => {
+ipcMain.handle('ENRICH_BATCH', async (event, { tracks, prompt, apiKey }) => {
   if (!tracks || tracks.length === 0) return [];
   
-  // Try one last time to get the key from env in case it was set late
-  const apiKey = process.env.GEMINI_API_KEY || GEMINI_API_KEY;
+  // Use the key passed from the UI (which is baked-in via Vite)
+  // or fall back to the local .env key (for local dev)
+  const finalKey = apiKey || process.env.GEMINI_API_KEY || GEMINI_API_KEY;
   
-  if (!apiKey) {
-    return [{ success: false, error: "API Key Missing. Please check your .env file." }];
+  if (!finalKey) {
+    return [{ success: false, error: "API Key Missing. Please check your GitHub Secrets or .env file." }];
   }
 
   const BATCH_SIZE = 50; 
@@ -78,7 +79,7 @@ ipcMain.handle('ENRICH_BATCH', async (event, { tracks, prompt }) => {
   const processSubBatch = async (subTracks) => {
     try {
       const response = await axios.post(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${finalKey}`,
         {
           contents: [{ role: 'user', parts: [{ text: prompt + "\n\nTracks to analyze:\n" + JSON.stringify(subTracks) }] }],
           generationConfig: { 

@@ -1,9 +1,9 @@
 import { RekordboxTrack, AIAnalysis, BatchUsage, SmartFilterCriteria } from "../types";
 import { VIBE_TAGS, MICRO_GENRE_TAGS, SITUATION_TAGS } from "./taxonomy";
 
-// This will be replaced at build time by Vite from the GitHub Secret
-// It's baked into the binary but handled via the CI/CD pipeline
-const BUNDLED_API_KEY = (import.meta.env.VITE_GEMINI_API_KEY || "").trim();
+// NO BUNDLED KEY - SECURE PROXY MODE
+// LIVE PROXY URL from successful deployment
+const FIREBASE_PROXY_URL = "https://us-central1-cratetool.cloudfunctions.net/enrichBatch";
 
 export const generateTags = async (track: RekordboxTrack): Promise<AIAnalysis> => {
   const result = await generateTagsBatch([track], 'full');
@@ -43,118 +43,53 @@ export const generateTagsBatch = async (
 Task: Analyze the provided list of tracks.`;
 
   if (mode === 'missing_year') {
-    systemInstruction += `
-Rules:
-1. Identify the ORIGINAL release year. Ignore intro/remaster dates.
-2. 2025 and 2026 are valid. Do NOT hallucinate years beyond 2026.
-3. If uncertain of the year, use "0".
-4. You MUST prioritize accuracy. Search your internal database for the correct release year of these specific songs.
-
-Return a JSON array of objects. 
-Each object: {"id": "...", "release_year": "..."}`;
+    systemInstruction += `\nRules:\n1. Identify ORIGINAL release year.\n2. 2025/2026 are valid.\n3. Uncertain? Use "0".\nReturn JSON: [{"id": "...", "release_year": "..."}]`;
   } else if (mode === 'missing_genre') {
-    systemInstruction += `
-Rules:
-1. Use ONLY the provided tags. Do NOT make up your own.
-
-GENRES: ${MICRO_GENRE_TAGS.join(', ')}
-
-Return a JSON array of objects. 
-Each object: {"id": "...", "genre": "..."}`;
+    systemInstruction += `\nRules:\n1. Use ONLY these GENRES: ${MICRO_GENRE_TAGS.join(', ')}\nReturn JSON: [{"id": "...", "genre": "..."}]`;
   } else {
-    systemInstruction += `
-Rules:
-1. Identify the ORIGINAL release year. Ignore intro/remaster dates.
-2. 2025 and 2026 are valid. Do NOT hallucinate years beyond 2026.
-3. If uncertain of the year, use "0".
-4. Use ONLY the provided tags. Do NOT make up your own.
-5. Create hashtags for vibe, genre, and situation.
-
-VIBES: ${VIBE_TAGS.join(', ')}
-GENRES: ${MICRO_GENRE_TAGS.join(', ')}
-SITUATIONS: ${SITUATION_TAGS.join(', ')}
-
-Return a JSON array of objects. 
-Each object: {"id": "...", "vibe": "...", "genre": "...", "situation": "...", "release_year": "...", "hashtags": "#Genre #Vibe #Situation"}`;
+    systemInstruction += `\nRules:\n1. Identify ORIGINAL release year.\n2. Use ONLY tags provided.\nVIBES: ${VIBE_TAGS.join(', ')}\nGENRES: ${MICRO_GENRE_TAGS.join(', ')}\nSITUATIONS: ${SITUATION_TAGS.join(', ')}\nReturn JSON: [{"id": "...", "vibe": "...", "genre": "...", "situation": "...", "release_year": "...", "hashtags": "#Genre #Vibe #Situation"}]`;
   }
 
-  if (window.electron) {
-    try {
-      const bridgeResults = await window.electron.enrichBatch({ 
-        tracks: tracksPayload, 
-        prompt: systemInstruction,
-        apiKey: BUNDLED_API_KEY // Pass the baked-in key to the backend
-      });
+  try {
+    const response = await fetch(FIREBASE_PROXY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tracks: tracksPayload, prompt: systemInstruction })
+    });
 
-      const resultsMap: Record<string, AIAnalysis> = {};
-      let totalCost = 0, totalIn = 0, totalOut = 0;
-      let lastError = "";
+    const res = await response.json();
+    if (!res.success) throw new Error(res.error || "Proxy Error");
 
-      bridgeResults.forEach((res: any) => {
-        if (!res.success || !res.data) {
-           lastError = res.error || "API Error";
-           return;
-        }
+    const resultsMap: Record<string, AIAnalysis> = {};
+    const usage = res.data.usageMetadata || { promptTokenCount: 0, candidatesTokenCount: 0 };
+    const cost = ((usage.promptTokenCount * 0.000000075) + (usage.candidatesTokenCount * 0.00000030));
 
-        const usage = res.data.usageMetadata;
-        if (usage) {
-           totalIn += usage.promptTokenCount || 0;
-           totalOut += usage.candidatesTokenCount || 0;
-           totalCost += ((usage.promptTokenCount * 0.000000075) + (usage.candidatesTokenCount * 0.00000030));
-        }
-
-        const text = res.data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (text) {
-          try {
-             const jsonMatch = text.match(/\[[\s\S]*\]|\{[\s\S]*\}/);
-             if (jsonMatch) {
-                const parsed = JSON.parse(jsonMatch[0]);
-                const items = Array.isArray(parsed) ? parsed : [parsed];
-                
-                items.forEach((item: any) => {
-                  if (item.id) {
-                    if (mode === 'missing_year') {
-                      resultsMap[item.id] = {
-                        year: (item.release_year || item.year || "0").toString(),
-                        vibe: "Unknown",
-                        genre: "Unknown",
-                        situation: "Unknown"
-                      };
-                    } else if (mode === 'missing_genre') {
-                      resultsMap[item.id] = {
-                        genre: validateTag(item.genre, MICRO_GENRE_TAGS),
-                        vibe: "Unknown",
-                        situation: "Unknown",
-                        year: "0"
-                      };
-                    } else {
-                      resultsMap[item.id] = {
-                        vibe: validateTag(item.vibe, VIBE_TAGS),
-                        genre: validateTag(item.genre, MICRO_GENRE_TAGS),
-                        situation: validateTag(item.situation, SITUATION_TAGS),
-                        year: (item.release_year || item.year || "0").toString(),
-                        hashtags: item.hashtags
-                      };
-                    }
-                  }
-                });
-             }
-          } catch (err) {
-             console.error("Batch parse error:", err);
-             lastError = "JSON Parse Error";
+    const text = res.data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (text) {
+      const jsonMatch = text.match(/\[[\s\S]*\]|\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        const items = Array.isArray(parsed) ? parsed : [parsed];
+        items.forEach((item: any) => {
+          if (item.id) {
+            resultsMap[item.id] = {
+              vibe: validateTag(item.vibe, VIBE_TAGS),
+              genre: validateTag(item.genre, MICRO_GENRE_TAGS),
+              situation: validateTag(item.situation, SITUATION_TAGS),
+              year: (item.release_year || item.year || "0").toString(),
+              hashtags: item.hashtags
+            };
           }
-        }
-      });
-
-      return { 
-        results: resultsMap, 
-        usage: { inputTokens: totalIn, outputTokens: totalOut, cost: totalCost },
-        error: Object.keys(resultsMap).length === 0 ? lastError : undefined 
-      };
-    } catch (e) {
-      return { results: {}, usage: { inputTokens: 0, outputTokens: 0, cost: 0 }, error: "Connection Error" };
+        });
+      }
     }
-  }
 
-  return { results: {}, usage: { inputTokens: 0, outputTokens: 0, cost: 0 }, error: "Electron Not Detected" };
+    return { 
+      results: resultsMap, 
+      usage: { inputTokens: usage.promptTokenCount, outputTokens: usage.candidatesTokenCount, cost },
+      error: Object.keys(resultsMap).length === 0 ? "No data returned" : undefined 
+    };
+  } catch (e: any) {
+    return { results: {}, usage: { inputTokens: 0, outputTokens: 0, cost: 0 }, error: e.message };
+  }
 };
