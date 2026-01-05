@@ -4,8 +4,13 @@ const axios = require('axios');
 const pLimit = require('p-limit');
 const fs = require('fs');
 
-// 🔒 THE VAULT: Hardcoded API Key
-const MOZART_API_KEY = 'AIzaSyD3UA7hHSrowzF-fEXTmQoPBOZJ8HZje_c';
+// 🔒 THE VAULT: API Key (Temporary Local Fallback)
+// Since Firebase deployment requires authentication, we will use the key directly here 
+// so you can use the app immediately. 
+// Once you successfully 'firebase deploy', switch this back to the FIREBASE_FUNCTION_URL.
+const MOZART_API_KEY = 'AIzaSyCdZ3qzImjGv6vXh0_llLpxEroQ_Mu_ufM';
+
+// const FIREBASE_FUNCTION_URL = "https://us-central1-cratetool.cloudfunctions.net/enrichTrack"; 
 
 let mainWindow;
 
@@ -60,18 +65,19 @@ ipcMain.handle('SAVE_FILE', async (event, { filePath, content }) => {
 ipcMain.handle('ENRICH_BATCH', async (event, { tracks, prompt }) => {
   if (!tracks || tracks.length === 0) return [];
 
-  const limit = pLimit(50); // High concurrency for Flash
+  const limit = pLimit(50); 
 
   const tasks = tracks.map((track) => limit(async () => {
     try {
-      // Using gemini-3-flash as confirmed available
+      // DIRECT GOOGLE API CALL (Fallback)
+      // Using gemini-1.5-flash
       const response = await axios.post(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash:generateContent?key=${MOZART_API_KEY}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${MOZART_API_KEY}`,
         {
           contents: [{ role: 'user', parts: [{ text: prompt + JSON.stringify(track) }] }],
           generationConfig: { 
             response_mime_type: "application/json",
-            temperature: 0.1 // Lower temperature for more consistent tagging
+            temperature: 0.1
           }
         },
         { timeout: 120000 }
@@ -79,10 +85,12 @@ ipcMain.handle('ENRICH_BATCH', async (event, { tracks, prompt }) => {
       
       const trackId = track.id || track.TrackID || track.ID;
       return { id: trackId, data: response.data, success: true };
+
     } catch (err) {
       const trackId = track.id || track.TrackID || track.ID;
-      console.error(`Error processing track ${trackId}:`, err.message);
-      return { id: trackId, error: err.message, success: false };
+      const errMsg = err.response?.data?.error?.message || err.message;
+      console.error(`Error processing track ${trackId}:`, errMsg);
+      return { id: trackId, error: errMsg, success: false };
     }
   }));
 
