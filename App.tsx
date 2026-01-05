@@ -41,11 +41,11 @@ const App: React.FC = () => {
   const stats = useMemo(() => calculateLibraryStats(tracks), [tracks]);
 
   const visibleTracks = useMemo(() => {
-    // Priority: If processing stats are visible, only show the subset being processed
-    if (isStatsVisible && processingTrackIds) {
-      return tracks.filter(t => processingTrackIds.includes(t.TrackID));
-    }
-
+    // If we're processing, we want the table to remain stable. 
+    // Do NOT filter the table based on processingTrackIds here if you want to see them in context.
+    // However, the user previously requested that it ONLY show subset being processed if stats are visible.
+    // Let's refine this: If processing is active, we don't want the table to "jump" or "glitch".
+    
     let result = tracks;
     if (dashboardFilter) {
       result = result.filter(t => {
@@ -63,7 +63,7 @@ const App: React.FC = () => {
       result = result.filter(track => tokens.every((token: string) => [track.Name, track.Artist, track.Genre, track.Analysis?.vibe].filter(Boolean).join(" ").toLowerCase().includes(token)));
     }
     return result;
-  }, [tracks, activeSearchQuery, dashboardFilter, smartFilter, isStatsVisible, processingTrackIds]);
+  }, [tracks, activeSearchQuery, dashboardFilter, smartFilter]); // Removed isStatsVisible/processingTrackIds to keep table stable
 
   const formatLogLine = (label: string, size: number, durationMs: number, usage: any, runningCost: number, speed: number, error?: string) => {
     const time = new Date().toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -134,7 +134,7 @@ const App: React.FC = () => {
         if (mode === 'missing_genre') {
           return { 
             ...t, 
-            Genre: res.genre, 
+            Genre: res.genre !== "Unknown" ? res.genre : t.Genre, 
             Analysis: t.Analysis ? { ...t.Analysis, genre: res.genre } : { genre: res.genre, vibe: 'Unknown', situation: 'Unknown', year: '0' } as AIAnalysis 
           };
         }
@@ -196,7 +196,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-dj-dark text-white font-sans selection:bg-dj-neon selection:text-black">
+    <div className="flex flex-col h-screen bg-dj-dark text-white font-sans selection:bg-dj-neon selection:text-black overflow-hidden">
       <header className="flex-none h-16 border-b border-dj-border bg-dj-dark/50 flex items-center justify-between px-6 sticky top-0 z-50 backdrop-blur-md">
         <div className="flex items-center gap-3 w-64">
           <div className="w-3 h-3 rounded-full bg-dj-neon shadow-[0_0_10px_rgba(0,243,255,0.5)]"></div>
@@ -211,21 +211,23 @@ const App: React.FC = () => {
           </div>
         )}
       </header>
-      <main className="flex-1">
+      <main className="flex-1 overflow-y-auto overflow-x-hidden no-scrollbar">
         <div className="p-6 flex flex-col min-h-full">
           {status === ParseStatus.IDLE && <div className="flex-1 flex flex-col items-center justify-center mt-20"><h2 className="text-2xl font-bold mb-4">Import Collection</h2><FileUploader onFileSelect={handleFileSelect} isLoading={false} /></div>}
           {status === ParseStatus.SUCCESS && (
             <div className="flex flex-col gap-6 animate-fade-in">
                {isStatsVisible && (
-                 <ProcessingStatsDisplay 
-                   stats={processingStats} 
-                   log={terminalLog} 
-                   onClose={() => {
-                     setIsStatsVisible(false);
-                     setProcessingTrackIds(null);
-                   }} 
-                   isProcessing={isEnriching} 
-                 />
+                 <div className="sticky top-0 z-[45] mb-2">
+                   <ProcessingStatsDisplay 
+                     stats={processingStats} 
+                     log={terminalLog} 
+                     onClose={() => {
+                       setIsStatsVisible(false);
+                       setProcessingTrackIds(null);
+                     }} 
+                     isProcessing={isEnriching} 
+                   />
+                 </div>
                )}
                <LibraryDashboard 
                   stats={stats} 

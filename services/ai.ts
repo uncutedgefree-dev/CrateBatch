@@ -44,6 +44,7 @@ Rules:
 1. Identify the ORIGINAL release year. Ignore intro/remaster dates.
 2. 2025 and 2026 are valid. Do NOT hallucinate years beyond 2026.
 3. If uncertain of the year, use "0".
+4. You MUST prioritize accuracy. Search your internal database for the correct release year of these specific songs.
 
 Return a JSON array of objects. 
 Each object: {"id": "...", "release_year": "..."}`;
