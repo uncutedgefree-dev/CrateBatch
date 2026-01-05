@@ -64,13 +64,14 @@ Rules:
 2. 2025 and 2026 are valid. Do NOT hallucinate years beyond 2026.
 3. If uncertain of the year, use "0".
 4. Use ONLY the provided tags. Do NOT make up your own.
+5. Create hashtags for vibe, genre, and situation.
 
 VIBES: ${VIBE_TAGS.join(', ')}
 GENRES: ${MICRO_GENRE_TAGS.join(', ')}
 SITUATIONS: ${SITUATION_TAGS.join(', ')}
 
 Return a JSON array of objects. 
-Each object: {"id": "...", "vibe": "...", "genre": "...", "situation": "...", "release_year": "..."}`;
+Each object: {"id": "...", "vibe": "...", "genre": "...", "situation": "...", "release_year": "...", "hashtags": "#Genre #Vibe #Situation"}`;
   }
 
   if (window.electron) {
@@ -126,7 +127,8 @@ Each object: {"id": "...", "vibe": "...", "genre": "...", "situation": "...", "r
                         vibe: validateTag(item.vibe, VIBE_TAGS),
                         genre: validateTag(item.genre, MICRO_GENRE_TAGS),
                         situation: validateTag(item.situation, SITUATION_TAGS),
-                        year: (item.release_year || item.year || "0").toString()
+                        year: (item.release_year || item.year || "0").toString(),
+                        hashtags: item.hashtags
                       };
                     }
                   }

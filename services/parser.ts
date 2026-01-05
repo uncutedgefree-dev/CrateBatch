@@ -14,7 +14,8 @@ const decodeEntities = (str: string): string => {
 
 // Helper to generate hashtags from analysis
 export const generateHashtags = (analysis: AIAnalysis): string => {
-  const toHashtag = (str: string) => str ? `#${str.replace(/\s+/g, '')}` : '';
+  if (analysis.hashtags) return analysis.hashtags;
+  const toHashtag = (str: string) => str && str !== "Unknown" ? `#${str.replace(/\s+/g, '')}` : '';
   const parts = [
     analysis.vibe ? toHashtag(analysis.vibe) : '',
     analysis.genre ? toHashtag(analysis.genre) : '',
@@ -77,13 +78,13 @@ export const updateTrackNode = (track: RekordboxTrack, analysis: AIAnalysis, mod
 
   // MODE: Only fix missing Genre
   if (mode === 'missing_genre') {
-    if (analysis.genre) {
+    if (analysis.genre && analysis.genre !== "Unknown") {
       attributes['@_Genre'] = analysis.genre;
     }
   } 
   // MODE: Only fix missing Year
   else if (mode === 'missing_year') {
-    if (analysis.year) {
+    if (analysis.year && analysis.year !== "0") {
       // Safety Check: Update ONLY if the existing year is empty, null, or equals '0'
       const currentYear = attributes['@_Year'];
       if (!currentYear || currentYear === "" || currentYear === "0") {
@@ -93,23 +94,27 @@ export const updateTrackNode = (track: RekordboxTrack, analysis: AIAnalysis, mod
   } 
   // MODE: Full Enrichment
   else {
-    // In Full Mode, we previously appended hashtags to Comments.
-    // WE NO LONGER DO THIS to preserve original comments (Mixed In Key, etc).
-    // The Analysis data is stored in the 'tracks' state in App.tsx and used for Playlist Generation only.
+    // In Full Mode (AI ENRICH), we add micro-genres and other vibes to the COMMENTS field
+    // as hashtags, but we PRESERVE existing comments.
+    const currentComments = attributes['@_Comments'] || "";
+    const hashtags = generateHashtags(analysis);
     
-    // However, if the track is missing basic metadata that we found, we might as well fix it (Year/Genre)
-    // ONLY if it is currently missing.
-    
-    if (analysis.year) {
+    if (hashtags) {
+      // If hashtags already exist in the comments, don't duplicate them
+      if (!currentComments.includes(hashtags)) {
+        attributes['@_Comments'] = currentComments ? `${currentComments} ${hashtags}` : hashtags;
+      }
+    }
+
+    // Also fix basic metadata if missing
+    if (analysis.year && analysis.year !== "0") {
       const currentYear = attributes['@_Year'];
       if (!currentYear || currentYear === "" || currentYear === "0") {
         attributes['@_Year'] = analysis.year;
       }
     }
     
-    // Optional: We could fix missing Genre here too, but users might prefer their own genre tags.
-    // We will leave Genre alone in 'full' mode unless it's empty, similar to Year.
-    if (analysis.genre) {
+    if (analysis.genre && analysis.genre !== "Unknown") {
       const currentGenre = attributes['@_Genre'];
       if (!currentGenre || currentGenre.trim() === "") {
          attributes['@_Genre'] = analysis.genre;
