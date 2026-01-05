@@ -15,7 +15,8 @@ export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve
  */
 export const runConcurrent = async <T>(
   tasks: (() => Promise<T>)[],
-  concurrency: number
+  concurrency: number,
+  delayBetweenTasks: number = 0
 ): Promise<void> => {
   const queue = [...tasks];
   
@@ -27,6 +28,9 @@ export const runConcurrent = async <T>(
           await task();
         } catch (e) {
           console.error("Task failed in concurrent runner", e);
+        }
+        if (delayBetweenTasks > 0 && queue.length > 0) {
+            await sleep(delayBetweenTasks);
         }
       }
     }

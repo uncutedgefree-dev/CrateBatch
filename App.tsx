@@ -105,7 +105,10 @@ const App: React.FC = () => {
       currentBatchLatency: 0
     });
 
-    const chunks = chunkArray<RekordboxTrack>(targetTracks, 50);
+    const failedTracks: RekordboxTrack[] = [];
+
+    // Increase batch size to 100 to improve throughput
+    const chunks = chunkArray<RekordboxTrack>(targetTracks, 100);
     const totalBatches = chunks.length;
 
     const tasks = chunks.map((chunk, idx) => async () => {
@@ -120,10 +123,15 @@ const App: React.FC = () => {
       const { results, usage, error } = await generateTagsBatch(chunk, mode);
       
       const chunkDuration = performance.now() - chunkStart;
-      jobCost += usage.cost;
-      processedCount += chunk.length;
-      totalIn += usage.inputTokens;
-      totalOut += usage.outputTokens;
+      
+      if (error || Object.keys(results).length === 0) {
+          failedTracks.push(...chunk);
+      } else {
+        jobCost += usage.cost;
+        processedCount += chunk.length;
+        totalIn += usage.inputTokens;
+        totalOut += usage.outputTokens;
+      }
       
       const durationSoFarMin = (performance.now() - startTime) / 60000;
       const currentSpm = processedCount / (durationSoFarMin || 0.001);
@@ -181,7 +189,86 @@ const App: React.FC = () => {
       });
     });
 
-    await runConcurrent(tasks, 3); 
+    // Run 8 concurrent tasks with a small stagger delay (250ms)
+    await runConcurrent(tasks, 8, 250);
+
+    // Process failed tracks if any
+    if (failedTracks.length > 0) {
+        setTerminalLog(prev => prev + `\n[${new Date().toLocaleTimeString()}] Retrying ${failedTracks.length} failed tracks...`);
+        const retryChunks = chunkArray<RekordboxTrack>(failedTracks, 50); // Smaller chunks for retry
+        const retryTasks = retryChunks.map((chunk, idx) => async () => {
+             const chunkIds = chunk.map(t => t.TrackID);
+              setActiveProcessingIds(prev => {
+                const next = new Set(prev);
+                chunkIds.forEach(id => next.add(id));
+                return next;
+              });
+
+              const chunkStart = performance.now();
+              const { results, usage, error } = await generateTagsBatch(chunk, mode);
+               const chunkDuration = performance.now() - chunkStart;
+               
+               if (!error && Object.keys(results).length > 0) {
+                    jobCost += usage.cost;
+                    processedCount += chunk.length;
+                    totalIn += usage.inputTokens;
+                    totalOut += usage.outputTokens;
+               }
+
+              const durationSoFarMin = (performance.now() - startTime) / 60000;
+              const currentSpm = processedCount / (durationSoFarMin || 0.001);
+
+              setProcessingStats(prev => ({
+                ...prev,
+                songsProcessed: processedCount,
+                totalCost: jobCost,
+                totalInputTokens: totalIn,
+                totalOutputTokens: totalOut,
+                currentSpeed: currentSpm,
+                currentBatchLatency: chunkDuration,
+                totalDuration: performance.now() - startTime,
+                etaSeconds: 0
+              }));
+
+              const log = formatLogLine(`Retry ${idx+1}/${retryChunks.length}`, chunk.length, chunkDuration, usage, jobCost, currentSpm, error);
+              setTerminalLog(prev => prev + '\n' + log);
+
+              setTracks(prev => prev.map(t => {
+                if (!results[t.TrackID]) return t;
+                const res = results[t.TrackID];
+                
+                if (mode === 'missing_genre') {
+                  return { 
+                    ...t, 
+                    Genre: res.genre !== "Unknown" ? res.genre : t.Genre, 
+                    Analysis: t.Analysis ? { ...t.Analysis, genre: res.genre } : { genre: res.genre, vibe: 'Unknown', situation: 'Unknown', year: '0' } as AIAnalysis 
+                  };
+                }
+                if (mode === 'missing_year') {
+                  return { 
+                    ...t, 
+                    Year: (res.year && res.year !== "0") ? res.year : t.Year, 
+                    Analysis: t.Analysis ? { ...t.Analysis, year: res.year } : { genre: 'Unknown', vibe: 'Unknown', situation: 'Unknown', year: res.year } as AIAnalysis 
+                  };
+                }
+                
+                return { ...t, Analysis: res };
+              }));
+
+              chunk.forEach(t => {
+                if (results[t.TrackID]) {
+                   updateTrackNode(t, results[t.TrackID], mode);
+                }
+              });
+
+              setActiveProcessingIds(prev => {
+                const next = new Set(prev);
+                chunkIds.forEach(id => next.delete(id));
+                return next;
+              });
+        });
+        await runConcurrent(retryTasks, 4, 500); // Slower concurrency for retries
+    }
     
     setIsEnriching(false);
     const finalDuration = performance.now() - startTime;
