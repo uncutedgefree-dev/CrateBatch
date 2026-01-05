@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { Search, Filter, X, Sparkles, ListPlus, CheckCircle } from 'lucide-react';
+import { ListPlus, CheckCircle } from 'lucide-react';
 import FileUploader from './components/FileUploader';
 import TrackTable from './components/TrackTable';
 import LibraryDashboard from './components/LibraryDashboard';
@@ -10,42 +10,33 @@ import PlaylistNameModal from './components/PlaylistNameModal';
 import { parseRekordboxXML, exportRekordboxXML, updateTrackNode, generateSmartPlaylists } from './services/parser';
 import { generateTagsBatch, interpretSearchQuery } from './services/ai';
 import { chunkArray, calculateLibraryStats, findDuplicates, runConcurrent } from './services/utils';
-import { RekordboxTrack, ParseStatus, ProcessingStats, SmartFilterCriteria, CustomPlaylist } from './types';
+import { RekordboxTrack, ParseStatus, ProcessingStats, CustomPlaylist } from './types';
 
 const App: React.FC = () => {
   const [tracks, setTracks] = useState<RekordboxTrack[]>([]);
   const [status, setStatus] = useState<ParseStatus>(ParseStatus.IDLE);
-  
   const [isEnriching, setIsEnriching] = useState(false);
   const [isStatsVisible, setIsStatsVisible] = useState(false);
   const [terminalLog, setTerminalLog] = useState<string>("");
-
   const [searchInput, setSearchInput] = useState(""); 
   const [activeSearchQuery, setActiveSearchQuery] = useState("");
-  const [isSearchingAI, setIsSearchingAI] = useState(false);
   const [savedPlaylists, setSavedPlaylists] = useState<CustomPlaylist[]>([]);
-  
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [showEnrichmentWarning, setShowEnrichmentWarning] = useState(false);
   const [showPlaylistModal, setShowPlaylistModal] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  
   const fullXmlDataRef = useRef<any>(null);
-
   const [processingStats, setProcessingStats] = useState<ProcessingStats>({
     totalCost: 0, totalInputTokens: 0, totalOutputTokens: 0, songsProcessed: 0, totalSongs: 0, startTime: 0, currentSpeed: 0, etaSeconds: 0, currentBatchLatency: 0
   });
-
   const [activeFilterName, setActiveFilterName] = useState<string | null>(null);
-  const [filteredIds, setFilteredIds] = useState<Set<string> | null>(null);
   const [dashboardFilter, setDashboardFilter] = useState<{ type: string, value: string } | null>(null);
-  const [smartFilter, setSmartFilter] = useState<SmartFilterCriteria | null>(null);
+  const [smartFilter, setSmartFilter] = useState<any>(null);
 
   const stats = useMemo(() => calculateLibraryStats(tracks), [tracks]);
 
   const visibleTracks = useMemo(() => {
     let result = tracks;
-    if (filteredIds) result = result.filter(t => filteredIds.has(t.TrackID));
     if (dashboardFilter) {
       result = result.filter(t => {
         const { type, value } = dashboardFilter;
@@ -58,8 +49,8 @@ const App: React.FC = () => {
     }
     if (smartFilter && smartFilter.isSemantic) {
        result = result.filter(t => {
-          if (smartFilter.genres.length > 0 && !smartFilter.genres.some(g => (t.Genre || "").toLowerCase().includes(g.toLowerCase()))) return false;
-          if (smartFilter.vibes.length > 0 && !smartFilter.vibes.some(v => t.Analysis?.vibe === v)) return false;
+          if (smartFilter.genres.length > 0 && !smartFilter.genres.some((g: string) => (t.Genre || "").toLowerCase().includes(g.toLowerCase()))) return false;
+          if (smartFilter.vibes.length > 0 && !smartFilter.vibes.some((v: string) => t.Analysis?.vibe === v)) return false;
           return true;
        });
     }
@@ -69,20 +60,19 @@ const App: React.FC = () => {
       result = result.filter(track => tokens.every(token => [track.Name, track.Artist, track.Genre, track.Analysis?.vibe].filter(Boolean).join(" ").toLowerCase().includes(token)));
     }
     return result;
-  }, [tracks, filteredIds, activeSearchQuery, dashboardFilter, smartFilter]);
+  }, [tracks, activeSearchQuery, dashboardFilter, smartFilter]);
 
   const handleSmartSearch = async (queryOverride?: string) => {
     const query = queryOverride ?? searchInput;
     if (!query.trim()) return;
     setActiveSearchQuery(query);
-    setIsSearchingAI(true);
     try {
         const criteria = await interpretSearchQuery(query);
         if (criteria.isSemantic) setSmartFilter(criteria);
-    } catch (err) {} finally { setIsSearchingAI(false); }
+    } catch (err) {}
   };
 
-  const formatLogLine = (label: string, size: number, durationMs: number, usage: any, runningCost: number, runningTokens: number, speed: number, error?: string) => {
+  const formatLogLine = (label: string, size: number, durationMs: number, usage: any, runningCost: number, speed: number, error?: string) => {
     const time = new Date().toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
     const costStr = error ? `ERROR: ${error.slice(0, 15)}...` : `+$${usage.cost.toFixed(4)} (Tot: $${runningCost.toFixed(4)})`;
     return `[${time}] ${label.padEnd(12)} | ${size.toString().padEnd(3)} items | ${(durationMs/1000).toFixed(2)}s | ${Math.round(speed)} spm | ${costStr}`;
@@ -106,13 +96,13 @@ const App: React.FC = () => {
     setIsStatsVisible(true);
     setTerminalLog(`[${new Date().toLocaleTimeString()}] Initializing ${mode} job (${targetTracks.length} items)...`);
     const startTime = performance.now();
-    let jobCost = 0; let jobTokens = 0;
+    let jobCost = 0;
     const chunks = chunkArray<RekordboxTrack>(targetTracks, 200);
     const tasks = chunks.map((chunk, idx) => async () => {
       const chunkStart = performance.now();
       const { results, usage, error } = await generateTagsBatch(chunk, mode);
-      jobCost += usage.cost; jobTokens += (usage.inputTokens + usage.outputTokens);
-      const log = formatLogLine(`Batch ${idx+1}/${chunks.length}`, chunk.length, performance.now() - chunkStart, usage, jobCost, jobTokens, (idx + 1) * 200 / ((performance.now() - startTime) / 60000), error);
+      jobCost += usage.cost;
+      const log = formatLogLine(`Batch ${idx+1}/${chunks.length}`, chunk.length, performance.now() - chunkStart, usage, jobCost, (idx + 1) * 200 / ((performance.now() - startTime) / 60000), error);
       setTerminalLog(prev => prev + '\n' + log);
       setTracks(prev => prev.map(t => results[t.TrackID] ? { ...t, Analysis: results[t.TrackID] } : t));
       chunk.forEach(t => results[t.TrackID] && updateTrackNode(t, results[t.TrackID], mode));
@@ -152,7 +142,15 @@ const App: React.FC = () => {
         {status === ParseStatus.SUCCESS && (
           <div className="flex flex-col gap-6">
              {isStatsVisible && <ProcessingStatsDisplay stats={processingStats} log={terminalLog} onClose={() => setIsStatsVisible(false)} isProcessing={isEnriching} />}
-             <LibraryDashboard stats={stats} onFilter={(type, value) => { setDashboardFilter({ type, value }); setActiveFilterName(`${type}: ${value}`); }} isProcessing={isEnriching} onFixYears={() => processBatch(tracks.filter(t => !t.Year), 'missing_year')} onFixGenres={() => processBatch(tracks.filter(t => !t.Genre), 'missing_genre')} onReviewDuplicates={() => setShowDuplicateModal(true)} />
+             <LibraryDashboard 
+                stats={stats} 
+                savedPlaylists={savedPlaylists}
+                onFilter={(type, value) => { setDashboardFilter({ type, value }); setActiveFilterName(`${type}: ${value}`); }} 
+                isProcessing={isEnriching} 
+                onFixYears={() => processBatch(tracks.filter(t => !t.Year), 'missing_year')} 
+                onFixGenres={() => processBatch(tracks.filter(t => !t.Genre), 'missing_genre')} 
+                onReviewDuplicates={() => setShowDuplicateModal(true)} 
+             />
              <div className="flex items-center justify-between"><div className="text-dj-dim text-xs">Showing {visibleTracks.length} tracks {activeFilterName && `(Filtered: ${activeFilterName})`}</div>{(activeFilterName || activeSearchQuery) && <button onClick={() => setShowPlaylistModal(true)} className="flex items-center gap-1.5 px-3 py-1 bg-green-500/10 border border-green-500 rounded-full text-xs font-bold text-green-500 hover:bg-green-500 hover:text-black"><ListPlus className="w-3 h-3" />Save as Playlist</button>}</div>
              <TrackTable tracks={visibleTracks} onAnalyzeTrack={() => {}} analyzingIds={new Set()} />
           </div>
