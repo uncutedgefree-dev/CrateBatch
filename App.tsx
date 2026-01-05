@@ -74,7 +74,7 @@ const App: React.FC = () => {
 
   const formatLogLine = (label: string, size: number, durationMs: number, usage: any, runningCost: number, speed: number, error?: string) => {
     const time = new Date().toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
-    const costStr = error ? `ERROR: ${error.slice(0, 15)}...` : `+$${usage.cost.toFixed(4)} (Tot: $${runningCost.toFixed(4)})`;
+    const costStr = error ? `ERR: ${error}` : `+$${usage.cost.toFixed(4)} (Tot: $${runningCost.toFixed(4)})`;
     return `[${time}] ${label.padEnd(12)} | ${size.toString().padEnd(3)} items | ${(durationMs/1000).toFixed(2)}s | ${Math.round(speed)} spm | ${costStr}`;
   };
 
@@ -102,7 +102,8 @@ const App: React.FC = () => {
       const chunkStart = performance.now();
       const { results, usage, error } = await generateTagsBatch(chunk, mode);
       jobCost += usage.cost;
-      const log = formatLogLine(`Batch ${idx+1}/${chunks.length}`, chunk.length, performance.now() - chunkStart, usage, jobCost, (idx + 1) * 200 / ((performance.now() - startTime) / 60000), error);
+      const currentSpm = ((idx + 1) * chunk.length) / ((performance.now() - startTime) / 60000);
+      const log = formatLogLine(`Batch ${idx+1}/${chunks.length}`, chunk.length, performance.now() - chunkStart, usage, jobCost, currentSpm, error);
       setTerminalLog(prev => prev + '\n' + log);
       setTracks(prev => prev.map(t => results[t.TrackID] ? { ...t, Analysis: results[t.TrackID] } : t));
       chunk.forEach(t => results[t.TrackID] && updateTrackNode(t, results[t.TrackID], mode));

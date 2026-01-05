@@ -1,7 +1,6 @@
 import { RekordboxTrack, AIAnalysis, BatchUsage, SmartFilterCriteria } from "../types";
 import { VIBE_TAGS, MICRO_GENRE_TAGS, SITUATION_TAGS } from "./taxonomy";
 
-// Model Configuration - STRICTLY LOCKED TO GEMINI-3-FLASH
 const MODEL_NAME = "gemini-3-flash";
 
 export const generateTags = async (track: RekordboxTrack): Promise<AIAnalysis> => {
@@ -22,7 +21,7 @@ const validateTag = (tag: string | undefined, allowed: string[]): string => {
 export interface BatchResponse {
   results: Record<string, AIAnalysis>;
   usage: BatchUsage;
-  error?: string; // Surfaces API errors to the UI
+  error?: string;
 }
 
 export const generateTagsBatch = async (
@@ -31,70 +30,85 @@ export const generateTagsBatch = async (
 ): Promise<BatchResponse> => {
   const tracksPayload = tracks.map(track => ({
     id: track.TrackID,
-    title: track.Name,
+    name: track.Name,
     artist: track.Artist,
     bpm: track.AverageBpm,
     key: track.Tonality,
-    comments: track.Comments || "",
-    request_mode: mode
+    comments: track.Comments || ""
   }));
 
-  const systemInstruction = `Task: Music Tagging. Return ONLY JSON. 
+  const systemInstruction = `Task: Tag the following list of music tracks. 
   Model: ${MODEL_NAME}.
-  ONLY use: VIBES: ${VIBE_TAGS.join(', ')}, GENRES: ${MICRO_GENRE_TAGS.join(', ')}, SITUATIONS: ${SITUATION_TAGS.join(', ')}.`;
-
-  const responseSchema = {
-    type: "OBJECT",
-    properties: { vibe: { type: "STRING" }, genre: { type: "STRING" }, situation: { type: "STRING" }, release_year: { type: "STRING" } },
-    required: ["vibe", "genre", "situation"]
-  };
-
-  const fullPrompt = `${systemInstruction}\n\nSchema:\n${JSON.stringify(responseSchema)}\n\nTracks:\n`;
+  Return a JSON array of objects. 
+  Each object MUST have: "id" (matching the track id), "vibe", "genre", "situation", "release_year".
+  
+  Allowed Values:
+  VIBES: ${VIBE_TAGS.join(', ')}
+  GENRES: ${MICRO_GENRE_TAGS.join(', ')}
+  SITUATIONS: ${SITUATION_TAGS.join(', ')}`;
 
   if (window.electron) {
     try {
-      const bridgeResults = await window.electron.enrichBatch({ tracks: tracksPayload, prompt: fullPrompt });
+      // We send the whole payload (e.g. 50 tracks) in one prompt
+      const bridgeResults = await window.electron.enrichBatch({ 
+        tracks: tracksPayload, 
+        prompt: systemInstruction 
+      });
+
       const resultsMap: Record<string, AIAnalysis> = {};
       let totalCost = 0, totalIn = 0, totalOut = 0;
-      let lastErrorMessage = "";
+      let lastError = "";
 
+      // The bridge now returns an array of "batch results" (responses from multi-track prompts)
       bridgeResults.forEach((res: any) => {
         if (!res.success || !res.data) {
-           lastErrorMessage = res.error || "Unknown API error";
+           lastError = res.error || "API Error";
            return;
         }
+
         const usage = res.data.usageMetadata;
         if (usage) {
-           const inT = usage.promptTokenCount || 0;
-           const outT = usage.candidatesTokenCount || 0;
-           totalIn += inT;
-           totalOut += outT;
-           totalCost += ((inT * 0.000000075) + (outT * 0.00000030));
+           totalIn += usage.promptTokenCount || 0;
+           totalOut += usage.candidatesTokenCount || 0;
+           totalCost += ((usage.promptTokenCount * 0.000000075) + (usage.candidatesTokenCount * 0.00000030));
         }
+
         const text = res.data.candidates?.[0]?.content?.parts?.[0]?.text;
         if (text) {
           try {
-             const cleanText = text.replace(/```json/g, '').replace(/```/g, '').trim();
-             const item = JSON.parse(cleanText);
-             resultsMap[res.id] = {
-               vibe: validateTag(item.vibe, VIBE_TAGS),
-               genre: validateTag(item.genre, MICRO_GENRE_TAGS),
-               situation: validateTag(item.situation, SITUATION_TAGS),
-               year: item.release_year || item.year || ""
-             };
-          } catch (err) {}
+             // Handle both array response and single object response
+             const jsonMatch = text.match(/\[[\s\S]*\]|\{[\s\S]*\}/);
+             if (jsonMatch) {
+                const parsed = JSON.parse(jsonMatch[0]);
+                const items = Array.isArray(parsed) ? parsed : [parsed];
+                
+                items.forEach((item: any) => {
+                  if (item.id) {
+                    resultsMap[item.id] = {
+                      vibe: validateTag(item.vibe, VIBE_TAGS),
+                      genre: validateTag(item.genre, MICRO_GENRE_TAGS),
+                      situation: validateTag(item.situation, SITUATION_TAGS),
+                      year: (item.release_year || item.year || "").toString()
+                    };
+                  }
+                });
+             }
+          } catch (err) {
+             console.error("Batch parse error:", err);
+             lastError = "JSON Parse Error";
+          }
         }
       });
-      
+
       return { 
         results: resultsMap, 
         usage: { inputTokens: totalIn, outputTokens: totalOut, cost: totalCost },
-        error: Object.keys(resultsMap).length === 0 ? lastErrorMessage : undefined
+        error: Object.keys(resultsMap).length === 0 ? lastError : undefined 
       };
     } catch (e) {
-      return { results: {}, usage: { inputTokens: 0, outputTokens: 0, cost: 0 }, error: "Bridge connection failed" };
+      return { results: {}, usage: { inputTokens: 0, outputTokens: 0, cost: 0 }, error: "Connection Error" };
     }
   }
 
-  return { results: {}, usage: { inputTokens: 0, outputTokens: 0, cost: 0 }, error: "Electron not detected" };
+  return { results: {}, usage: { inputTokens: 0, outputTokens: 0, cost: 0 }, error: "Electron Not Detected" };
 };
