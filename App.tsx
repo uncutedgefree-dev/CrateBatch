@@ -10,7 +10,7 @@ import PlaylistNameModal from './components/PlaylistNameModal';
 import { parseRekordboxXML, exportRekordboxXML, updateTrackNode, generateSmartPlaylists } from './services/parser';
 import { generateTagsBatch } from './services/ai';
 import { chunkArray, calculateLibraryStats, findDuplicates, runConcurrent } from './services/utils';
-import { RekordboxTrack, ParseStatus, ProcessingStats, CustomPlaylist } from './types';
+import { RekordboxTrack, ParseStatus, ProcessingStats, CustomPlaylist, AIAnalysis } from './types';
 
 const App: React.FC = () => {
   const [tracks, setTracks] = useState<RekordboxTrack[]>([]);
@@ -35,10 +35,16 @@ const App: React.FC = () => {
   const [activeFilterName, setActiveFilterName] = useState<string | null>(null);
   const [dashboardFilter, setDashboardFilter] = useState<{ type: string, value: string } | null>(null);
   const [smartFilter] = useState<any>(null);
+  const [processingTrackIds, setProcessingTrackIds] = useState<string[] | null>(null);
 
   const stats = useMemo(() => calculateLibraryStats(tracks), [tracks]);
 
   const visibleTracks = useMemo(() => {
+    // Priority: If processing stats are visible, only show the subset being processed
+    if (isStatsVisible && processingTrackIds) {
+      return tracks.filter(t => processingTrackIds.includes(t.TrackID));
+    }
+
     let result = tracks;
     if (dashboardFilter) {
       result = result.filter(t => {
@@ -56,7 +62,7 @@ const App: React.FC = () => {
       result = result.filter(track => tokens.every((token: string) => [track.Name, track.Artist, track.Genre, track.Analysis?.vibe].filter(Boolean).join(" ").toLowerCase().includes(token)));
     }
     return result;
-  }, [tracks, activeSearchQuery, dashboardFilter, smartFilter]);
+  }, [tracks, activeSearchQuery, dashboardFilter, smartFilter, isStatsVisible, processingTrackIds]);
 
   const formatLogLine = (label: string, size: number, durationMs: number, usage: any, runningCost: number, speed: number, error?: string) => {
     const time = new Date().toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -81,6 +87,7 @@ const App: React.FC = () => {
     if (targetTracks.length === 0) return;
     setIsEnriching(true);
     setIsStatsVisible(true);
+    setProcessingTrackIds(targetTracks.map(t => t.TrackID));
     setTerminalLog(`[${new Date().toLocaleTimeString()}] Initializing ${mode} job (${targetTracks.length} items)...`);
     
     const startTime = performance.now();
@@ -89,7 +96,6 @@ const App: React.FC = () => {
     
     setProcessingStats(prev => ({ ...prev, totalSongs: targetTracks.length, songsProcessed: 0, startTime }));
 
-    // Optimized: 50 items per prompt
     const chunks = chunkArray<RekordboxTrack>(targetTracks, 50);
     const totalBatches = chunks.length;
 
@@ -116,15 +122,32 @@ const App: React.FC = () => {
       setTracks(prev => prev.map(t => {
         if (!results[t.TrackID]) return t;
         const res = results[t.TrackID];
-        if (mode === 'missing_genre') return { ...t, Genre: res.genre, Analysis: { ...(t.Analysis || {}), ...res } as any };
-        if (mode === 'missing_year') return { ...t, Year: (res.year && res.year !== "0") ? res.year : t.Year, Analysis: { ...(t.Analysis || {}), ...res } as any };
+        
+        if (mode === 'missing_genre') {
+          return { 
+            ...t, 
+            Genre: res.genre, 
+            Analysis: t.Analysis ? { ...t.Analysis, genre: res.genre } : { genre: res.genre, vibe: 'Unknown', situation: 'Unknown', year: '0' } as AIAnalysis 
+          };
+        }
+        if (mode === 'missing_year') {
+          return { 
+            ...t, 
+            Year: (res.year && res.year !== "0") ? res.year : t.Year, 
+            Analysis: t.Analysis ? { ...t.Analysis, year: res.year } : { genre: 'Unknown', vibe: 'Unknown', situation: 'Unknown', year: res.year } as AIAnalysis 
+          };
+        }
+        
         return { ...t, Analysis: res };
       }));
 
-      chunk.forEach(t => results[t.TrackID] && updateTrackNode(t, results[t.TrackID], mode));
+      chunk.forEach(t => {
+        if (results[t.TrackID]) {
+           updateTrackNode(t, results[t.TrackID], mode);
+        }
+      });
     });
 
-    // Using 3 parallel requests for stability
     await runConcurrent(tasks, 3); 
     
     setIsEnriching(false);
@@ -160,7 +183,17 @@ const App: React.FC = () => {
           {status === ParseStatus.IDLE && <div className="flex-1 flex flex-col items-center justify-center mt-20"><h2 className="text-2xl font-bold mb-4">Import Collection</h2><FileUploader onFileSelect={handleFileSelect} isLoading={false} /></div>}
           {status === ParseStatus.SUCCESS && (
             <div className="flex flex-col gap-6 animate-fade-in">
-               {isStatsVisible && <ProcessingStatsDisplay stats={processingStats} log={terminalLog} onClose={() => setIsStatsVisible(false)} isProcessing={isEnriching} />}
+               {isStatsVisible && (
+                 <ProcessingStatsDisplay 
+                   stats={processingStats} 
+                   log={terminalLog} 
+                   onClose={() => {
+                     setIsStatsVisible(false);
+                     setProcessingTrackIds(null);
+                   }} 
+                   isProcessing={isEnriching} 
+                 />
+               )}
                <LibraryDashboard 
                   stats={stats} 
                   savedPlaylists={savedPlaylists}
