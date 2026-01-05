@@ -57,7 +57,7 @@ const App: React.FC = () => {
     const textQuery = smartFilter ? smartFilter.keywords.join(" ") : activeSearchQuery;
     if (textQuery.trim()) {
       const tokens = textQuery.toLowerCase().trim().split(/\s+/);
-      result = result.filter(track => tokens.every(token => [track.Name, track.Artist, track.Genre, track.Analysis?.vibe].filter(Boolean).join(" ").toLowerCase().includes(token)));
+      result = result.filter(track => tokens.every((token: string) => [track.Name, track.Artist, track.Genre, track.Analysis?.vibe].filter(Boolean).join(" ").toLowerCase().includes(token)));
     }
     return result;
   }, [tracks, activeSearchQuery, dashboardFilter, smartFilter]);
