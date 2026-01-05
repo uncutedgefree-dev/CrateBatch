@@ -4,7 +4,7 @@ import { VIBE_TAGS, MICRO_GENRE_TAGS, SITUATION_TAGS } from "./taxonomy";
 const MODEL_NAME = "gemini-3-flash";
 
 export const generateTags = async (track: RekordboxTrack): Promise<AIAnalysis> => {
-  const result = await generateTagsBatch([track], 'full');
+  const result = await generateTagsBatch([track]);
   return result.results[track.TrackID] || { vibe: "Unknown", genre: "Unknown", situation: "Unknown", year: "" };
 };
 
@@ -25,8 +25,7 @@ export interface BatchResponse {
 }
 
 export const generateTagsBatch = async (
-  tracks: RekordboxTrack[], 
-  mode: 'full' | 'missing_genre' | 'missing_year' = 'full'
+  tracks: RekordboxTrack[]
 ): Promise<BatchResponse> => {
   const tracksPayload = tracks.map(track => ({
     id: track.TrackID,
@@ -49,7 +48,6 @@ export const generateTagsBatch = async (
 
   if (window.electron) {
     try {
-      // We send the whole payload (e.g. 50 tracks) in one prompt
       const bridgeResults = await window.electron.enrichBatch({ 
         tracks: tracksPayload, 
         prompt: systemInstruction 
@@ -59,7 +57,6 @@ export const generateTagsBatch = async (
       let totalCost = 0, totalIn = 0, totalOut = 0;
       let lastError = "";
 
-      // The bridge now returns an array of "batch results" (responses from multi-track prompts)
       bridgeResults.forEach((res: any) => {
         if (!res.success || !res.data) {
            lastError = res.error || "API Error";
@@ -76,7 +73,6 @@ export const generateTagsBatch = async (
         const text = res.data.candidates?.[0]?.content?.parts?.[0]?.text;
         if (text) {
           try {
-             // Handle both array response and single object response
              const jsonMatch = text.match(/\[[\s\S]*\]|\{[\s\S]*\}/);
              if (jsonMatch) {
                 const parsed = JSON.parse(jsonMatch[0]);

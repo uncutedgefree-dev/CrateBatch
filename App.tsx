@@ -100,7 +100,7 @@ const App: React.FC = () => {
     const chunks = chunkArray<RekordboxTrack>(targetTracks, 200);
     const tasks = chunks.map((chunk, idx) => async () => {
       const chunkStart = performance.now();
-      const { results, usage, error } = await generateTagsBatch(chunk, mode);
+      const { results, usage, error } = await generateTagsBatch(chunk);
       jobCost += usage.cost;
       const currentSpm = ((idx + 1) * chunk.length) / ((performance.now() - startTime) / 60000);
       const log = formatLogLine(`Batch ${idx+1}/${chunks.length}`, chunk.length, performance.now() - chunkStart, usage, jobCost, currentSpm, error);
