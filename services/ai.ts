@@ -106,12 +106,28 @@ Each object: {"id": "...", "vibe": "...", "genre": "...", "situation": "...", "r
                 
                 items.forEach((item: any) => {
                   if (item.id) {
-                    resultsMap[item.id] = {
-                      vibe: validateTag(item.vibe, VIBE_TAGS),
-                      genre: validateTag(item.genre, MICRO_GENRE_TAGS),
-                      situation: validateTag(item.situation, SITUATION_TAGS),
-                      year: (item.release_year || item.year || "0").toString()
-                    };
+                    if (mode === 'missing_year') {
+                      resultsMap[item.id] = {
+                        year: (item.release_year || item.year || "0").toString(),
+                        vibe: "Unknown",
+                        genre: "Unknown",
+                        situation: "Unknown"
+                      };
+                    } else if (mode === 'missing_genre') {
+                      resultsMap[item.id] = {
+                        genre: validateTag(item.genre, MICRO_GENRE_TAGS),
+                        vibe: "Unknown",
+                        situation: "Unknown",
+                        year: "0"
+                      };
+                    } else {
+                      resultsMap[item.id] = {
+                        vibe: validateTag(item.vibe, VIBE_TAGS),
+                        genre: validateTag(item.genre, MICRO_GENRE_TAGS),
+                        situation: validateTag(item.situation, SITUATION_TAGS),
+                        year: (item.release_year || item.year || "0").toString()
+                      };
+                    }
                   }
                 });
              }
