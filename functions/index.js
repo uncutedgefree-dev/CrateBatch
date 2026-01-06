@@ -56,7 +56,7 @@ exports.generatePlaylist = onRequest({
   secrets: ["GEMINI_API_KEY"] 
 }, async (request, response) => {
   try {
-    const { query, taxonomy } = request.body;
+    const { query, taxonomy, prompt: customPrompt } = request.body;
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!query || !apiKey) {
@@ -67,7 +67,8 @@ exports.generatePlaylist = onRequest({
     const model = getModel(apiKey);
     
     // Prompt to convert natural language into structured filters
-    const prompt = `
+    // Use customPrompt from client if available (allows frontend iteration)
+    const prompt = customPrompt || `
       You are an expert DJ music librarian.
       User Query: "${query}"
       
@@ -82,7 +83,10 @@ exports.generatePlaylist = onRequest({
       1. Analyze the query for semantic meaning (mood, energy, era, genre, setting).
       2. Map these concepts to the provided taxonomy tags where possible.
       3. Extract specific constraints like BPM range, Year range, or Energy level (1-10).
-      4. Return ONLY a JSON object.
+      4. "keywords" should ONLY contain specific Artist names, Track titles, or Record Labels found in the query.
+      5. DO NOT include generic words like "song", "track", "music", "mix", "best", "playlist" in "keywords".
+      6. DO NOT include words that you have already mapped to a Vibe, Genre, or Situation in "keywords". (e.g. if you mapped "Love" to "Romantic", do NOT add "Love" to keywords).
+      7. Return ONLY a JSON object.
       
       JSON Schema:
       {
