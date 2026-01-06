@@ -44,21 +44,10 @@ function createWindow() {
     }
   });
   
-  // Use Firebase Hosting URL for instant updates
-  // Fallback to local file only if offline or development mode explicitly set
-  const onlineUrl = 'https://cratetool.web.app';
-  const localUrl = `file://${path.join(__dirname, '../dist/index.html')}`;
-  
-  // Logic: Try to load the online URL first. If it fails (offline), load the local file.
-  // This allows "over-the-air" updates simply by deploying to Firebase Hosting.
-  if (process.env.NODE_ENV === 'development') {
-    mainWindow.loadURL('http://localhost:5173');
-  } else {
-    mainWindow.loadURL(onlineUrl).catch(() => {
-      console.log('Failed to load online version, falling back to local bundle');
-      mainWindow.loadURL(localUrl);
-    });
-  }
+  // REVERTED: Load local file for stability.
+  // Remote loading caused context bridge issues.
+  const startUrl = process.env.ELECTRON_START_URL || `file://${path.join(__dirname, '../dist/index.html')}`;
+  mainWindow.loadURL(startUrl);
 }
 
 app.whenReady().then(createWindow);
