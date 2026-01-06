@@ -248,7 +248,7 @@ const App: React.FC = () => {
                     return { 
                       ...t, 
                       Genre: res.genre !== "Unknown" ? res.genre : t.Genre,
-                       Analysis: t.Analysis ? { ...t.Analysis, genre: res.genre } : { genre: res.genre, vibe: 'Unknown', situation: 'Unknown', year: '0' } as AIAnalysis 
+                      Analysis: t.Analysis ? { ...t.Analysis, genre: res.genre } : { genre: res.genre, vibe: 'Unknown', situation: 'Unknown', year: '0' } as AIAnalysis 
                     };
                 }
                 if (mode === 'missing_year') {
@@ -256,7 +256,7 @@ const App: React.FC = () => {
                      return { 
                         ...t, 
                         Year: (res.year && res.year !== "0") ? res.year : t.Year,
-                         Analysis: t.Analysis ? { ...t.Analysis, year: res.year } : { genre: 'Unknown', vibe: 'Unknown', situation: 'Unknown', year: res.year } as AIAnalysis 
+                        Analysis: t.Analysis ? { ...t.Analysis, year: res.year } : { genre: 'Unknown', vibe: 'Unknown', situation: 'Unknown', year: res.year } as AIAnalysis 
                       };
                 }
                 
@@ -316,6 +316,14 @@ const App: React.FC = () => {
     setDashboardFilter(null);
     setActiveSearchQuery("");
     setSearchInput("");
+  };
+
+  // Helper to determine if a track needs full enrichment
+  const needsEnrichment = (t: RekordboxTrack) => {
+      // It needs enrichment if:
+      // 1. It has NO Analysis object at all
+      // 2. It HAS an Analysis object, but the 'vibe' is 'Unknown' (which implies situation/sub-genre are also likely unknown/default)
+      return !t.Analysis || t.Analysis.vibe === 'Unknown' || t.Analysis.vibe === undefined;
   };
 
   return (
@@ -386,7 +394,7 @@ const App: React.FC = () => {
         </div>
       </main>
       {showDuplicateModal && <DuplicateReviewModal groups={stats.missingData.duplicateGroups} onClose={() => setShowDuplicateModal(false)} />}
-      {showEnrichmentWarning && <EnrichmentWarningModal filteredCount={visibleTracks.length} totalCount={tracks.length} onProcessFiltered={() => { setShowEnrichmentWarning(false); processBatch(visibleTracks.filter(t => !t.Analysis), 'full'); }} onProcessAll={() => { setShowEnrichmentWarning(false); processBatch(tracks.filter(t => !t.Analysis), 'full'); }} onCancel={() => setShowEnrichmentWarning(false)} />}
+      {showEnrichmentWarning && <EnrichmentWarningModal filteredCount={visibleTracks.length} totalCount={tracks.length} onProcessFiltered={() => { setShowEnrichmentWarning(false); processBatch(visibleTracks.filter(needsEnrichment), 'full'); }} onProcessAll={() => { setShowEnrichmentWarning(false); processBatch(tracks.filter(needsEnrichment), 'full'); }} onCancel={() => setShowEnrichmentWarning(false)} />}
       {showPlaylistModal && <PlaylistNameModal defaultValue={activeFilterName || activeSearchQuery || "New Playlist"} count={visibleTracks.length} onSave={name => { setSavedPlaylists(prev => [...prev, { name, trackIds: visibleTracks.map(t => t.TrackID) }]); setShowPlaylistModal(false); setToastMessage(`Playlist "${name}" saved!`); setTimeout(() => setToastMessage(null), 3000); }} onClose={() => setShowPlaylistModal(false)} />}
       {toastMessage && <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[200] flex items-center gap-3 bg-dj-panel border border-dj-neon/50 text-white px-6 py-3 rounded-full shadow-2xl animate-fade-in"><CheckCircle className="w-5 h-5 text-dj-neon" /><span className="font-bold text-sm">{toastMessage}</span></div>}
     </div>
