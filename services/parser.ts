@@ -80,6 +80,7 @@ export const updateTrackNode = (track: RekordboxTrack, analysis: AIAnalysis, mod
   if (mode === 'missing_genre') {
     if (analysis.genre && analysis.genre !== "Unknown") {
       attributes['@_Genre'] = analysis.genre;
+      // CRITICAL: Do NOT modify Comments or other fields in this mode
     }
   } 
   // MODE: Only fix missing Year
@@ -90,6 +91,7 @@ export const updateTrackNode = (track: RekordboxTrack, analysis: AIAnalysis, mod
       if (!currentYear || currentYear === "" || currentYear === "0") {
         attributes['@_Year'] = analysis.year;
       }
+      // CRITICAL: Do NOT modify Comments or other fields in this mode
     }
   } 
   // MODE: Full Enrichment
@@ -97,7 +99,17 @@ export const updateTrackNode = (track: RekordboxTrack, analysis: AIAnalysis, mod
     // In Full Mode (AI ENRICH), we add micro-genres and other vibes to the COMMENTS field
     // as hashtags, but we PRESERVE existing comments.
     const currentComments = attributes['@_Comments'] || "";
-    const hashtags = generateHashtags(analysis);
+    
+    // Generate new hashtags but filter out "Unknown" tags first
+    // We modify generateHashtags logic slightly here or ensure the Analysis object passed in is clean
+    const toHashtag = (str: string) => str && str !== "Unknown" ? `#${str.replace(/\s+/g, '')}` : '';
+    const parts = [
+      analysis.vibe ? toHashtag(analysis.vibe) : '',
+      analysis.genre ? toHashtag(analysis.genre) : '',
+      analysis.situation ? toHashtag(analysis.situation) : ''
+    ].filter(Boolean);
+    
+    const hashtags = parts.join(' ');
     
     if (hashtags) {
       // If hashtags already exist in the comments, don't duplicate them
