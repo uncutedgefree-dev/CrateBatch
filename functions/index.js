@@ -2,6 +2,15 @@ const { onRequest } = require("firebase-functions/v2/https");
 const logger = require("firebase-functions/logger");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
+// Helper to get initialized model
+const getModel = (apiKey) => {
+  const genAI = new GoogleGenerativeAI(apiKey);
+  return genAI.getGenerativeModel({ 
+    model: "gemini-3-flash-preview", 
+    generationConfig: { responseMimeType: "application/json" } 
+  });
+};
+
 exports.enrichBatch = onRequest({ 
   cors: true,
   timeoutSeconds: 540,
@@ -19,16 +28,7 @@ exports.enrichBatch = onRequest({
       return;
     }
 
-    const genAI = new GoogleGenerativeAI(apiKey);
-    
-    // Explicitly using the requested preview model
-    const modelName = "gemini-3-flash-preview";
-    
-    const model = genAI.getGenerativeModel({ 
-      model: modelName, 
-      generationConfig: { responseMimeType: "application/json" } 
-    });
-
+    const model = getModel(apiKey);
     const result = await model.generateContent(prompt + "\n\nTracks:\n" + JSON.stringify(tracks));
     const aiResponse = await result.response;
     const text = aiResponse.text();
@@ -42,12 +42,75 @@ exports.enrichBatch = onRequest({
     });
 
   } catch (error) {
-    logger.error(`Batch AI Error (${process.env.GEMINI_API_KEY ? 'Key Present' : 'Key Missing'})`, error);
-    
+    logger.error(`Batch AI Error`, error);
     const msg = error.message || "Unknown Error";
-    response.status(500).send({ 
-      success: false, 
-      error: msg.includes("404") ? `Model '${modelName}' not found or not accessible.` : msg 
+    response.status(500).send({ success: false, error: msg });
+  }
+});
+
+// New Function: Semantic Search / Playlist Generator
+exports.generatePlaylist = onRequest({ 
+  cors: true,
+  timeoutSeconds: 60,
+  memory: "512Mi",
+  secrets: ["GEMINI_API_KEY"] 
+}, async (request, response) => {
+  try {
+    const { query, taxonomy } = request.body;
+    const apiKey = process.env.GEMINI_API_KEY;
+
+    if (!query || !apiKey) {
+      response.status(400).send({ error: "Missing query or API key" });
+      return;
+    }
+
+    const model = getModel(apiKey);
+    
+    // Prompt to convert natural language into structured filters
+    const prompt = `
+      You are an expert DJ music librarian.
+      User Query: "${query}"
+      
+      Your goal is to translate this request into a structured JSON filter object.
+      
+      Available Taxonomy:
+      Vibes: ${JSON.stringify(taxonomy.vibes)}
+      Genres: ${JSON.stringify(taxonomy.genres)}
+      Situations: ${JSON.stringify(taxonomy.situations)}
+      
+      Instructions:
+      1. Analyze the query for semantic meaning (mood, energy, era, genre, setting).
+      2. Map these concepts to the provided taxonomy tags where possible.
+      3. Extract specific constraints like BPM range, Year range, or Energy level (1-10).
+      4. Return ONLY a JSON object.
+      
+      JSON Schema:
+      {
+        "keywords": ["string"], // Free text keywords found in query
+        "genres": ["string"],   // Matched exact taxonomy genres
+        "vibes": ["string"],    // Matched exact taxonomy vibes
+        "situations": ["string"], // Matched exact taxonomy situations
+        "minBpm": number | null,
+        "maxBpm": number | null,
+        "minYear": number | null,
+        "maxYear": number | null,
+        "minEnergy": number | null,
+        "maxEnergy": number | null,
+        "explanation": "string" // Brief explanation of why these filters were chosen
+      }
+    `;
+
+    const result = await model.generateContent(prompt);
+    const aiResponse = await result.response;
+    const text = aiResponse.text();
+
+    response.status(200).send({ 
+      success: true, 
+      data: JSON.parse(text) 
     });
+
+  } catch (error) {
+    logger.error("Playlist Gen Error", error);
+    response.status(500).send({ success: false, error: error.message });
   }
 });

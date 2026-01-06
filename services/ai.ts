@@ -3,7 +3,9 @@ import { VIBE_TAGS, MICRO_GENRE_TAGS, SITUATION_TAGS } from "./taxonomy";
 
 // NO BUNDLED KEY - SECURE PROXY MODE
 // LIVE PROXY URL from successful deployment
-const FIREBASE_PROXY_URL = "https://enrichbatch-nxf6vuupsq-uc.a.run.app";
+const ENRICH_PROXY_URL = "https://enrichbatch-nxf6vuupsq-uc.a.run.app";
+// New Playlist Generator Endpoint
+const PLAYLIST_PROXY_URL = "https://us-central1-cratetool.cloudfunctions.net/generatePlaylist";
 
 export const generateTags = async (track: RekordboxTrack): Promise<AIAnalysis> => {
   const result = await generateTagsBatch([track], 'full');
@@ -11,7 +13,48 @@ export const generateTags = async (track: RekordboxTrack): Promise<AIAnalysis> =
 };
 
 export const interpretSearchQuery = async (query: string): Promise<SmartFilterCriteria> => {
-  return { genres: [], vibes: [], situations: [], keywords: [query], isSemantic: false };
+  try {
+    const response = await fetch(PLAYLIST_PROXY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        query, 
+        taxonomy: { vibes: VIBE_TAGS, genres: MICRO_GENRE_TAGS, situations: SITUATION_TAGS } 
+      })
+    });
+
+    const res = await response.json();
+    if (!res.success) throw new Error(res.error || "Playlist Gen Error");
+
+    const data = res.data;
+    
+    // Convert text output to structured data if AI returned string
+    let parsedData = data;
+    if (typeof data === 'string') {
+        const jsonMatch = data.match(/\{[\s\S]*\}/);
+        if (jsonMatch) parsedData = JSON.parse(jsonMatch[0]);
+    }
+
+    return {
+      keywords: parsedData.keywords || [],
+      genres: parsedData.genres || [],
+      vibes: parsedData.vibes || [],
+      situations: parsedData.situations || [],
+      minBpm: parsedData.minBpm,
+      maxBpm: parsedData.maxBpm,
+      minYear: parsedData.minYear,
+      maxYear: parsedData.maxYear,
+      minEnergy: parsedData.minEnergy,
+      maxEnergy: parsedData.maxEnergy,
+      keys: parsedData.keys,
+      isSemantic: true
+    };
+
+  } catch (error) {
+    console.error("Semantic Search Failed:", error);
+    // Fallback to basic keyword search
+    return { genres: [], vibes: [], situations: [], keywords: [query], isSemantic: false };
+  }
 };
 
 const validateTag = (tag: string | undefined, allowed: string[]): string => {
@@ -51,7 +94,7 @@ Task: Analyze the provided list of tracks.`;
   }
 
   try {
-    const response = await fetch(FIREBASE_PROXY_URL, {
+    const response = await fetch(ENRICH_PROXY_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tracks: tracksPayload, prompt: systemInstruction })
