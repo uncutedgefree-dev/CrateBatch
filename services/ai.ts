@@ -16,12 +16,50 @@ export const generateTags = async (track: RekordboxTrack): Promise<AIAnalysis> =
 
 export const interpretSearchQuery = async (query: string): Promise<SmartFilterCriteria> => {
   try {
+    // Construct the prompt for the search interpretation
+    const prompt = `
+      You are an expert DJ music librarian.
+      User Query: "${query}"
+      
+      Your goal is to translate this request into a structured JSON filter object.
+      
+      Available Taxonomy:
+      Vibes: ${JSON.stringify(VIBE_TAGS)}
+      Genres: ${JSON.stringify(MICRO_GENRE_TAGS)}
+      Situations: ${JSON.stringify(SITUATION_TAGS)}
+      
+      Instructions:
+      1. Analyze the query for semantic meaning (mood, energy, era, genre, setting).
+      2. Map these concepts to the provided taxonomy tags where possible.
+      3. Extract specific constraints like BPM range, Year range, or Energy level (1-10).
+      4. "keywords" should ONLY contain specific Artist names, Track titles, or Record Labels found in the query.
+      5. DO NOT include generic words like "song", "track", "music", "mix", "best", "playlist" in "keywords".
+      6. DO NOT include words that you have already mapped to a Vibe, Genre, or Situation in "keywords". (e.g. if you mapped "Love" to "Romantic", do NOT add "Love" to keywords).
+      7. Return ONLY a JSON object.
+      
+      JSON Schema:
+      {
+        "keywords": ["string"], // Free text keywords found in query
+        "genres": ["string"],   // Matched exact taxonomy genres
+        "vibes": ["string"],    // Matched exact taxonomy vibes
+        "situations": ["string"], // Matched exact taxonomy situations
+        "minBpm": number | null,
+        "maxBpm": number | null,
+        "minYear": number | null,
+        "maxYear": number | null,
+        "minEnergy": number | null,
+        "maxEnergy": number | null,
+        "explanation": "string" // Brief explanation of why these filters were chosen
+      }
+    `;
+
     const response = await fetch(PLAYLIST_PROXY_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
         query, 
-        taxonomy: { vibes: VIBE_TAGS, genres: MICRO_GENRE_TAGS, situations: SITUATION_TAGS } 
+        taxonomy: { vibes: VIBE_TAGS, genres: MICRO_GENRE_TAGS, situations: SITUATION_TAGS },
+        prompt: prompt // Sending prompt explicitly in case backend uses it directly
       })
     });
 
@@ -35,6 +73,15 @@ export const interpretSearchQuery = async (query: string): Promise<SmartFilterCr
     if (typeof data === 'string') {
         const jsonMatch = data.match(/\{[\s\S]*\}/);
         if (jsonMatch) parsedData = JSON.parse(jsonMatch[0]);
+    }
+    
+    // Double check: if response has candidates (Cloud Run direct), parse that
+    if (!parsedData && data.candidates) {
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+         if (text) {
+            const jsonMatch = text.match(/\{[\s\S]*\}/);
+            if (jsonMatch) parsedData = JSON.parse(jsonMatch[0]);
+         }
     }
 
     return {

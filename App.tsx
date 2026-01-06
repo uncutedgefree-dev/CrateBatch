@@ -80,9 +80,10 @@ const App: React.FC = () => {
         const yearMatch = (!smartFilter.minYear || year >= smartFilter.minYear) && 
                           (!smartFilter.maxYear || year <= smartFilter.maxYear);
 
-        // F. Match Keywords (Fuzzy Search in Title/Artist)
+        // F. Match Keywords (Fuzzy Search in Title/Artist/Album/Genre)
+        // We include Album and Genre here to be more flexible if AI returns a keyword that is actually a genre or album name
         const keywordMatch = smartFilter.keywords.length === 0 || smartFilter.keywords.every((k: string) => 
-          (track.Name + " " + track.Artist).toLowerCase().includes(k.toLowerCase())
+          (track.Name + " " + track.Artist + " " + (track.Album || "") + " " + (track.Genre || "")).toLowerCase().includes(k.toLowerCase())
         );
 
         return genreMatch && vibeMatch && situationMatch && bpmMatch && yearMatch && keywordMatch;
