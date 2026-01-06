@@ -4,6 +4,14 @@ export const VIBE_TAGS = [
   "Raw", "Cinematic", "Groovy", "Dark", "Cheesy"
 ];
 
+// Broad Genres for the main "Genre" column (Fix Missing Genre tool)
+export const MAIN_GENRE_TAGS = [
+  "Hip Hop", "R&B", "Pop", "Rock", "Electronic", "Dance", 
+  "House", "Techno", "Latin", "Reggae", "Jazz", "Country", 
+  "Classical", "Blues", "Folk", "Funk", "Soul", "Disco", "Alternative"
+];
+
+// Granular Sub-genres for "AI Analysis" (Enrich tool)
 export const MICRO_GENRE_TAGS = [
   // Electronic / Dance
   "Acid Jazz", "Afro House", "Afrobeats", "Amapiano", "Bass House", "Big Room", 

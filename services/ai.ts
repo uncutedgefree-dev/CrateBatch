@@ -1,5 +1,5 @@
 import { RekordboxTrack, AIAnalysis, BatchUsage, SmartFilterCriteria } from "../types";
-import { VIBE_TAGS, MICRO_GENRE_TAGS, SITUATION_TAGS } from "./taxonomy";
+import { VIBE_TAGS, MICRO_GENRE_TAGS, SITUATION_TAGS, MAIN_GENRE_TAGS } from "./taxonomy";
 
 // NO BUNDLED KEY - SECURE PROXY MODE
 // LIVE PROXY URL from successful deployment
@@ -144,7 +144,11 @@ Task: Analyze the provided list of tracks.`;
 5. Valid Range: 1950-${currentYear}.
 Return JSON: [{"id": "...", "release_year": "..."}]`;
   } else if (mode === 'missing_genre') {
-    systemInstruction += `\nRules:\n1. Use ONLY these GENRES: ${MICRO_GENRE_TAGS.join(', ')}\nReturn JSON: [{"id": "...", "genre": "..."}]`;
+    // UPDATED INSTRUCTION FOR MISSING GENRE MODE
+    systemInstruction += `\nRules:
+1. Identify the BROAD MAIN GENRE for the track.
+2. Use ONLY these Broad Genres: ${MAIN_GENRE_TAGS.join(', ')}
+3. Return JSON: [{"id": "...", "genre": "..."}]`;
   } else {
     // UPDATED INSTRUCTION FOR FULL MODE
     systemInstruction += `\nRules:
@@ -184,9 +188,12 @@ Return JSON: [{"id": "...", "vibe": "...", "genre": "...", "situation": "...", "
         const items = Array.isArray(parsed) ? parsed : [parsed];
         items.forEach((item: any) => {
           if (item.id) {
+            // Determine which genre set to validate against
+            const genreListToValidate = mode === 'missing_genre' ? MAIN_GENRE_TAGS : MICRO_GENRE_TAGS;
+
             resultsMap[item.id] = {
               vibe: validateTag(item.vibe, VIBE_TAGS),
-              genre: validateTag(item.genre, MICRO_GENRE_TAGS),
+              genre: validateTag(item.genre, genreListToValidate),
               situation: validateTag(item.situation, SITUATION_TAGS),
               year: (item.release_year || item.year || "0").toString(),
               hashtags: item.hashtags
