@@ -146,7 +146,20 @@ Return JSON: [{"id": "...", "release_year": "..."}]`;
   } else if (mode === 'missing_genre') {
     systemInstruction += `\nRules:\n1. Use ONLY these GENRES: ${MICRO_GENRE_TAGS.join(', ')}\nReturn JSON: [{"id": "...", "genre": "..."}]`;
   } else {
-    systemInstruction += `\nRules:\n1. Identify ORIGINAL release year.\n2. Use ONLY tags provided.\nVIBES: ${VIBE_TAGS.join(', ')}\nGENRES: ${MICRO_GENRE_TAGS.join(', ')}\nSITUATIONS: ${SITUATION_TAGS.join(', ')}\nReturn JSON: [{"id": "...", "vibe": "...", "genre": "...", "situation": "...", "release_year": "...", "hashtags": "#Genre #Vibe #Situation"}]`;
+    // UPDATED INSTRUCTION FOR FULL MODE
+    systemInstruction += `\nRules:
+1. Identify ORIGINAL release year.
+2. Use ONLY tags provided.
+3. STRICTLY IGNORE BPM when determining Genre. A Hip Hop track at 80BPM is NOT R&B.
+4. "R&B" is for Rhythm & Blues, Neo-Soul, or Slow Jams. Rap/Trap verses = Hip Hop.
+5. AVOID BROAD GENRES like "Hip Hop", "Pop", "Rock", "Electronic", "Dance" if a more specific micro-genre applies.
+6. Use "Trap", "Boom Bap", "Drill", "Grime" for Hip-Hop subgenres.
+7. Use "Contemporary R&B", "New Jack Swing", "Neo Soul" for R&B subgenres.
+8. If the Artist is a Rapper, default to "Trap" or "Boom Bap" depending on the era/style, unless it is clearly an R&B crossover.
+VIBES: ${VIBE_TAGS.join(', ')}
+GENRES: ${MICRO_GENRE_TAGS.join(', ')}
+SITUATIONS: ${SITUATION_TAGS.join(', ')}
+Return JSON: [{"id": "...", "vibe": "...", "genre": "...", "situation": "...", "release_year": "...", "hashtags": "#Genre #Vibe #Situation"}]`;
   }
 
   try {

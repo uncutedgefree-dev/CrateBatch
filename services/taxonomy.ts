@@ -6,7 +6,7 @@ export const VIBE_TAGS = [
 
 export const MICRO_GENRE_TAGS = [
   // Electronic / Dance
-  "Acid Jazz", "Afro House", "Amapiano", "Bass House", "Big Room", 
+  "Acid Jazz", "Afro House", "Afrobeats", "Amapiano", "Bass House", "Big Room", 
   "Boom Bap", "Chicago House", "Complextro", "Dancehall", "Deep Tech", 
   "Detroit Techno", "Disco Edit", "Drum & Bass", "Dubstep", "Electro Swing", 
   "Eurodance", "Future Bass", "Future House", "G-House", "Garage / UKG", 
@@ -17,13 +17,19 @@ export const MICRO_GENRE_TAGS = [
   "Tribal House", "Tropical House", "Yacht Rock", "00s Pop", 
   "90s HipHop", "80s NewWave",
 
+  // Hip Hop / Rap Sub-genres (Granular)
+  "Drill", "Grime", "Southern HipHop", "Gangsta Rap", "Cloud Rap", 
+  "Conscious HipHop", "Jazz Rap", "Hyphy", "Crunk", "Trap",
+
   // Rock / Metal / Alternative
   "Heavy Metal", "Hard Rock", "Thrash Metal", "Classic Rock", "Alternative Rock",
   "Indie Rock", "Punk Rock", "Pop Punk", "Grunge", "Industrial", "Nu Metal",
+  "Emo", "Ska Punk",
 
-  // Open Format / Other
-  "R&B", "Contemporary Pop", "K-Pop", "Latin Pop", "Reggae", "Ska", 
-  "Blues", "Funk", "Soul", "Country", "Folk", "Classical"
+  // Pop / R&B / Latin / Other
+  "Contemporary R&B", "Slow Jams", "New Jack Swing", "Funk", "Soul", 
+  "Hyperpop", "Electropop", "City Pop", "K-Pop", "Latin Pop", "Dembow", "Baile Funk",
+  "Reggae", "Roots Reggae", "Ska", "Blues", "Country", "Folk", "Classical"
 ];
 
 export const SITUATION_TAGS = [
