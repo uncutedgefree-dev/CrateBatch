@@ -131,11 +131,18 @@ export const generateTagsBatch = async (
     comments: track.Comments || ""
   }));
 
-  let systemInstruction = `You are an expert music librarian. The current year is 2026.
+  const currentYear = new Date().getFullYear();
+  let systemInstruction = `You are an expert music librarian. The current year is ${currentYear}.
 Task: Analyze the provided list of tracks.`;
 
   if (mode === 'missing_year') {
-    systemInstruction += `\nRules:\n1. Identify ORIGINAL release year.\n2. 2025/2026 are valid.\n3. Uncertain? Use "0".\nReturn JSON: [{"id": "...", "release_year": "..."}]`;
+    systemInstruction += `\nRules:
+1. Identify the ORIGINAL release year for each track based on the Artist and Title.
+2. IGNORE "Intro", "Clean", "Dirty", "Extended Mix", "DJcity" or other DJ edit labels when determining the year. Focus on the core song.
+3. If it is a known Remix or Cover, provide the year that specific version was released.
+4. STRICTLY NO GUESSING. If you do not know the track or are unsure, return "0".
+5. Valid Range: 1950-${currentYear}.
+Return JSON: [{"id": "...", "release_year": "..."}]`;
   } else if (mode === 'missing_genre') {
     systemInstruction += `\nRules:\n1. Use ONLY these GENRES: ${MICRO_GENRE_TAGS.join(', ')}\nReturn JSON: [{"id": "...", "genre": "..."}]`;
   } else {
