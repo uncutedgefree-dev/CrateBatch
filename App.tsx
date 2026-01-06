@@ -99,13 +99,18 @@ const App: React.FC = () => {
   }, [tracks, activeSearchQuery, dashboardFilter, smartFilter]);
 
   const handleSearch = async (query: string) => {
-    setActiveSearchQuery(query);
-    if (!query.trim()) {
+    // Trim query first
+    query = query.trim();
+    
+    // Clear filters if empty
+    if (!query) {
+      setActiveSearchQuery("");
       setSmartFilter(null);
+      setActiveFilterName(null);
       return;
     }
 
-    // Always attempt AI analysis for any query to support single-word concepts (e.g., "beach", "chill")
+    setActiveSearchQuery(query);
     setToastMessage({ message: "AI Analyzing Request...", type: "info" });
     
     try {
