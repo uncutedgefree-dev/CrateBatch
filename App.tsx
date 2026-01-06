@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { ListPlus, CheckCircle, XCircle } from 'lucide-react';
+import { ListPlus, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
 import FileUploader from './components/FileUploader';
 import TrackTable from './components/TrackTable';
 import LibraryDashboard from './components/LibraryDashboard';
@@ -24,7 +24,7 @@ const App: React.FC = () => {
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [showEnrichmentWarning, setShowEnrichmentWarning] = useState(false);
   const [showPlaylistModal, setShowPlaylistModal] = useState(false);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<{ message: string, type: 'success' | 'error' | 'info' } | null>(null);
   const fullXmlDataRef = useRef<any>(null);
   const mainScrollRef = useRef<HTMLElement>(null);
   
@@ -104,27 +104,26 @@ const App: React.FC = () => {
       return;
     }
 
-    // Only trigger AI search if query looks complex (more than 1 word or specific triggers)
-    // For simple keyword search, we stick to basic filtering for speed.
-    const isComplex = query.split(' ').length > 1; 
+    // Always attempt AI analysis for any query to support single-word concepts (e.g., "beach", "chill")
+    setToastMessage({ message: "AI Analyzing Request...", type: "info" });
     
-    if (isComplex) {
-      setToastMessage("AI Analyzing Request...");
-      try {
-        const criteria = await interpretSearchQuery(query);
-        if (criteria.isSemantic) {
-          setSmartFilter(criteria);
-          setActiveFilterName(`AI: "${query}"`);
-          setToastMessage(null);
-        } else {
-          setSmartFilter(null);
-        }
-      } catch (e) {
-        console.error("Search failed", e);
+    try {
+      const criteria = await interpretSearchQuery(query);
+      if (criteria.isSemantic) {
+        setSmartFilter(criteria);
+        setActiveFilterName(`AI: "${query}"`);
+      } else {
+        // If AI says it's not semantic (just keywords), we rely on basic search but still clear the AI filter
         setSmartFilter(null);
       }
-    } else {
+      // Success - clear toast
+      setToastMessage(null);
+    } catch (e) {
+      console.error("Search failed", e);
+      // On error, fallback to basic text search (which is already triggered by setActiveSearchQuery)
       setSmartFilter(null);
+      setToastMessage({ message: "AI Search Unavailable. Using basic search.", type: "error" });
+      setTimeout(() => setToastMessage(null), 3000);
     }
   };
 
@@ -469,8 +468,13 @@ const App: React.FC = () => {
       </main>
       {showDuplicateModal && <DuplicateReviewModal groups={stats.missingData.duplicateGroups} onClose={() => setShowDuplicateModal(false)} />}
       {showEnrichmentWarning && <EnrichmentWarningModal filteredCount={visibleTracks.length} totalCount={tracks.length} onProcessFiltered={() => { setShowEnrichmentWarning(false); processBatch(visibleTracks.filter(needsEnrichment), 'full'); }} onProcessAll={() => { setShowEnrichmentWarning(false); processBatch(tracks.filter(needsEnrichment), 'full'); }} onCancel={() => setShowEnrichmentWarning(false)} />}
-      {showPlaylistModal && <PlaylistNameModal defaultValue={activeFilterName || activeSearchQuery || "New Playlist"} count={visibleTracks.length} onSave={name => { setSavedPlaylists(prev => [...prev, { name, trackIds: visibleTracks.map(t => t.TrackID) }]); setShowPlaylistModal(false); setToastMessage(`Playlist "${name}" saved!`); setTimeout(() => setToastMessage(null), 3000); }} onClose={() => setShowPlaylistModal(false)} />}
-      {toastMessage && <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[200] flex items-center gap-3 bg-dj-panel border border-dj-neon/50 text-white px-6 py-3 rounded-full shadow-2xl animate-fade-in"><CheckCircle className="w-5 h-5 text-dj-neon" /><span className="font-bold text-sm">{toastMessage}</span></div>}
+      {showPlaylistModal && <PlaylistNameModal defaultValue={activeFilterName || activeSearchQuery || "New Playlist"} count={visibleTracks.length} onSave={name => { setSavedPlaylists(prev => [...prev, { name, trackIds: visibleTracks.map(t => t.TrackID) }]); setShowPlaylistModal(false); setToastMessage({ message: `Playlist "${name}" saved!`, type: "success" }); setTimeout(() => setToastMessage(null), 3000); }} onClose={() => setShowPlaylistModal(false)} />}
+      {toastMessage && (
+        <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-[200] flex items-center gap-3 bg-dj-panel border ${toastMessage.type === 'error' ? 'border-red-500 text-red-100' : 'border-dj-neon/50 text-white'} px-6 py-3 rounded-full shadow-2xl animate-fade-in`}>
+          {toastMessage.type === 'error' ? <AlertCircle className="w-5 h-5 text-red-500" /> : <CheckCircle className="w-5 h-5 text-dj-neon" />}
+          <span className="font-bold text-sm">{toastMessage.message}</span>
+        </div>
+      )}
     </div>
   );
 };

@@ -4,8 +4,10 @@ import { VIBE_TAGS, MICRO_GENRE_TAGS, SITUATION_TAGS } from "./taxonomy";
 // NO BUNDLED KEY - SECURE PROXY MODE
 // LIVE PROXY URL from successful deployment
 const ENRICH_PROXY_URL = "https://enrichbatch-nxf6vuupsq-uc.a.run.app";
-// New Playlist Generator Endpoint
-const PLAYLIST_PROXY_URL = "https://us-central1-cratetool.cloudfunctions.net/generatePlaylist";
+
+// Updated to use the consistent Cloud Run URL format matching the working enrich function
+// Derived from: enrichbatch-nxf6vuupsq-uc.a.run.app -> generateplaylist-nxf6vuupsq-uc.a.run.app
+const PLAYLIST_PROXY_URL = "https://generateplaylist-nxf6vuupsq-uc.a.run.app";
 
 export const generateTags = async (track: RekordboxTrack): Promise<AIAnalysis> => {
   const result = await generateTagsBatch([track], 'full');
