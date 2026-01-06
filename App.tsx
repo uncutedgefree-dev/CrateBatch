@@ -8,7 +8,7 @@ import ProcessingStatsDisplay from './components/ProcessingStats';
 import EnrichmentWarningModal from './components/EnrichmentWarningModal';
 import PlaylistNameModal from './components/PlaylistNameModal';
 import { parseRekordboxXML, exportRekordboxXML, updateTrackNode, generateSmartPlaylists } from './services/parser';
-import { generateTagsBatch } from './services/ai';
+import { generateTagsBatch, interpretSearchQuery } from './services/ai';
 import { chunkArray, calculateLibraryStats, findDuplicates, runConcurrent } from './services/utils';
 import { RekordboxTrack, ParseStatus, ProcessingStats, CustomPlaylist, AIAnalysis } from './types';
 
@@ -36,13 +36,15 @@ const App: React.FC = () => {
 
   const [activeFilterName, setActiveFilterName] = useState<string | null>(null);
   const [dashboardFilter, setDashboardFilter] = useState<{ type: string, value: string } | null>(null);
-  const [smartFilter] = useState<any>(null);
+  const [smartFilter, setSmartFilter] = useState<any>(null);
   const [activeProcessingIds, setActiveProcessingIds] = useState<Set<string>>(new Set());
 
   const stats = useMemo(() => calculateLibraryStats(tracks), [tracks]);
 
   const visibleTracks = useMemo(() => {
     let result = tracks;
+    
+    // 1. Dashboard Filters (Clicking Charts)
     if (dashboardFilter) {
       result = result.filter(t => {
         const { type, value } = dashboardFilter;
@@ -53,13 +55,78 @@ const App: React.FC = () => {
         return true;
       });
     }
-    const textQuery = smartFilter ? smartFilter.keywords.join(" ") : activeSearchQuery;
-    if (textQuery.trim()) {
-      const tokens = textQuery.toLowerCase().trim().split(/\s+/);
+
+    // 2. Smart Semantic Filter (AI Search)
+    if (smartFilter && smartFilter.isSemantic) {
+      result = result.filter(track => {
+        // A. Match Genres (Sub-Genre or Main Genre)
+        const genreMatch = smartFilter.genres.length === 0 || smartFilter.genres.some((g: string) => 
+          (track.Analysis?.genre === g) || (track.Genre && track.Genre.includes(g))
+        );
+
+        // B. Match Vibes
+        const vibeMatch = smartFilter.vibes.length === 0 || smartFilter.vibes.includes(track.Analysis?.vibe);
+
+        // C. Match Situations
+        const situationMatch = smartFilter.situations.length === 0 || smartFilter.situations.includes(track.Analysis?.situation);
+
+        // D. Match BPM Range
+        const bpm = parseFloat(track.AverageBpm || "0");
+        const bpmMatch = (!smartFilter.minBpm || bpm >= smartFilter.minBpm) && 
+                         (!smartFilter.maxBpm || bpm <= smartFilter.maxBpm);
+
+        // E. Match Year Range
+        const year = parseInt(track.Year || track.Analysis?.year || "0");
+        const yearMatch = (!smartFilter.minYear || year >= smartFilter.minYear) && 
+                          (!smartFilter.maxYear || year <= smartFilter.maxYear);
+
+        // F. Match Keywords (Fuzzy Search in Title/Artist)
+        const keywordMatch = smartFilter.keywords.length === 0 || smartFilter.keywords.every((k: string) => 
+          (track.Name + " " + track.Artist).toLowerCase().includes(k.toLowerCase())
+        );
+
+        return genreMatch && vibeMatch && situationMatch && bpmMatch && yearMatch && keywordMatch;
+      });
+    } 
+    // 3. Fallback: Basic Text Search if no semantic filter
+    else if (activeSearchQuery.trim()) {
+      const tokens = activeSearchQuery.toLowerCase().trim().split(/\s+/);
       result = result.filter(track => tokens.every((token: string) => [track.Name, track.Artist, track.Genre, track.Analysis?.vibe].filter(Boolean).join(" ").toLowerCase().includes(token)));
     }
+
     return result;
   }, [tracks, activeSearchQuery, dashboardFilter, smartFilter]);
+
+  const handleSearch = async (query: string) => {
+    setActiveSearchQuery(query);
+    if (!query.trim()) {
+      setSmartFilter(null);
+      return;
+    }
+
+    // Only trigger AI search if query looks complex (more than 1 word or specific triggers)
+    // For simple keyword search, we stick to basic filtering for speed.
+    const isComplex = query.split(' ').length > 1; 
+    
+    if (isComplex) {
+      setToastMessage("AI Analyzing Request...");
+      try {
+        const criteria = await interpretSearchQuery(query);
+        if (criteria.isSemantic) {
+          setSmartFilter(criteria);
+          setActiveFilterName(`AI: "${query}"`);
+          setToastMessage(null);
+        } else {
+          setSmartFilter(null);
+        }
+      } catch (e) {
+        console.error("Search failed", e);
+        setSmartFilter(null);
+      }
+    } else {
+      setSmartFilter(null);
+    }
+  };
 
   const formatLogLine = (label: string, size: number, durationMs: number, usage: any, runningCost: number, speed: number, error?: string) => {
     const time = new Date().toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -247,8 +314,7 @@ const App: React.FC = () => {
                     // ONLY update the Genre field for missing_genre mode
                     return { 
                       ...t, 
-                      Genre: res.genre !== "Unknown" ? res.genre : t.Genre,
-                      Analysis: t.Analysis ? { ...t.Analysis, genre: res.genre } : { genre: res.genre, vibe: 'Unknown', situation: 'Unknown', year: '0' } as AIAnalysis 
+                      Genre: res.genre !== "Unknown" ? res.genre : t.Genre
                     };
                 }
                 if (mode === 'missing_year') {
@@ -256,7 +322,7 @@ const App: React.FC = () => {
                      return { 
                         ...t, 
                         Year: (res.year && res.year !== "0") ? res.year : t.Year,
-                        Analysis: t.Analysis ? { ...t.Analysis, year: res.year } : { genre: 'Unknown', vibe: 'Unknown', situation: 'Unknown', year: res.year } as AIAnalysis 
+                         Analysis: t.Analysis ? { ...t.Analysis, year: res.year } : { genre: 'Unknown', vibe: 'Unknown', situation: 'Unknown', year: res.year } as AIAnalysis 
                       };
                 }
                 
@@ -314,6 +380,7 @@ const App: React.FC = () => {
   const clearFilters = () => {
     setActiveFilterName(null);
     setDashboardFilter(null);
+    setSmartFilter(null);
     setActiveSearchQuery("");
     setSearchInput("");
   };
@@ -335,7 +402,14 @@ const App: React.FC = () => {
         </div>
         {status === ParseStatus.SUCCESS && (
           <div className="flex items-center gap-4">
-            <input type="text" placeholder="Search..." value={searchInput} onChange={e => setSearchInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && setActiveSearchQuery(searchInput)} className="bg-dj-panel border border-dj-border rounded-full py-1 px-6 text-sm focus:outline-none focus:border-dj-neon w-80" />
+            <input 
+              type="text" 
+              placeholder="Search (e.g. 'Chill sunset vibes 2020s')" 
+              value={searchInput} 
+              onChange={e => setSearchInput(e.target.value)} 
+              onKeyDown={e => e.key === 'Enter' && handleSearch(searchInput)} 
+              className="bg-dj-panel border border-dj-border rounded-full py-1 px-6 text-sm focus:outline-none focus:border-dj-neon w-80 transition-all focus:w-96" 
+            />
             <button onClick={() => setShowEnrichmentWarning(true)} className="bg-dj-neon/10 text-dj-neon border border-dj-neon px-4 py-1.5 rounded text-sm font-bold uppercase hover:bg-dj-neon hover:text-black transition-all">AI Enrich</button>
             <button onClick={handleExport} className="bg-dj-accent/10 text-dj-accent border border-dj-accent px-4 py-1.5 rounded text-sm font-bold uppercase hover:bg-dj-accent hover:text-white transition-all">Export</button>
             <button onClick={() => { setTracks([]); setStatus(ParseStatus.IDLE); }} className="text-xs px-3 py-1.5 rounded border border-dj-border hover:text-red-500 hover:border-red-500">CLEAR</button>
