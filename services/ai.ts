@@ -138,10 +138,12 @@ Task: Analyze the provided list of tracks.`;
   if (mode === 'missing_year') {
     systemInstruction += `\nRules:
 1. Identify the ORIGINAL release year for each track based on the Artist and Title.
-2. IGNORE "Intro", "Clean", "Dirty", "Extended Mix", "DJcity" or other DJ edit labels when determining the year. Focus on the core song.
-3. If it is a known Remix or Cover, provide the year that specific version was released.
-4. STRICTLY NO GUESSING. If you do not know the track or are unsure, return "0".
-5. Valid Range: 1950-${currentYear}.
+2. Search your internal knowledge base for metadata from popular DJ record pools (DJCity, BPM Supreme, Franchise Record Pool, Club Killers, Direct Music Service).
+3. If the track is a "DJ Intro", "Club Edit", "Redrum", or "Remix" found on these pools, use the year the EDIT was released if available, otherwise use the original song year.
+4. IGNORE "Intro", "Clean", "Dirty", "Extended Mix" labels when determining the core song identity, but use them to identify if it's a specific pool release.
+5. If it is a known Remix or Cover, provide the year that specific version was released.
+6. STRICTLY NO GUESSING. If you do not know the track or are unsure, return "0".
+7. Valid Range: 1950-${currentYear}.
 Return JSON: [{"id": "...", "release_year": "..."}]`;
   } else if (mode === 'missing_genre') {
     // UPDATED INSTRUCTION FOR MISSING GENRE MODE
