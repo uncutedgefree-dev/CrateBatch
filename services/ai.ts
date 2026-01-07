@@ -59,7 +59,8 @@ export const interpretSearchQuery = async (query: string): Promise<SmartFilterCr
       body: JSON.stringify({ 
         query, 
         taxonomy: { vibes: VIBE_TAGS, genres: MICRO_GENRE_TAGS, situations: SITUATION_TAGS },
-        prompt: prompt // Sending prompt explicitly in case backend uses it directly
+        prompt: prompt, // Sending prompt explicitly in case backend uses it directly
+        model: "gemini-3-pro-preview"
       })
     });
 
@@ -120,8 +121,7 @@ export interface BatchResponse {
 
 export const generateTagsBatch = async (
   tracks: RekordboxTrack[],
-  mode: 'full' | 'missing_genre' | 'missing_year' = 'full',
-  retryWithStrongerModel: boolean = false
+  mode: 'full' | 'missing_genre' | 'missing_year' = 'full'
 ): Promise<BatchResponse> => {
   const tracksPayload = tracks.map(track => ({
     id: track.TrackID,
@@ -174,8 +174,8 @@ Return JSON: [{"id": "...", "vibe": "...", "genre": "...", "situation": "...", "
   }
 
   try {
-    // User requested specific models: Flash first, then Pro for retries
-    const model = retryWithStrongerModel ? "gemini-3-pro-preview" : "gemini-3-flash-preview";
+    // ALWAYS USE PRO MODEL
+    const model = "gemini-3-pro-preview";
     
     const response = await fetch(ENRICH_PROXY_URL, {
       method: 'POST',
@@ -193,9 +193,9 @@ Return JSON: [{"id": "...", "vibe": "...", "genre": "...", "situation": "...", "
     const resultsMap: Record<string, AIAnalysis> = {};
     const usage = res.data.usageMetadata || { promptTokenCount: 0, candidatesTokenCount: 0 };
     
-    // Cost estimation (approximate relative difference between Flash and Pro)
-    const inputCostPerToken = retryWithStrongerModel ? 0.0000035 : 0.000000075;
-    const outputCostPerToken = retryWithStrongerModel ? 0.0000105 : 0.00000030;
+    // Cost estimation for Pro model
+    const inputCostPerToken = 0.0000035;
+    const outputCostPerToken = 0.0000105;
     const cost = ((usage.promptTokenCount * inputCostPerToken) + (usage.candidatesTokenCount * outputCostPerToken));
 
     const text = res.data.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -219,45 +219,6 @@ Return JSON: [{"id": "...", "vibe": "...", "genre": "...", "situation": "...", "
           }
         });
       }
-    }
-
-    // RETRY STRATEGY
-    // If we are in 'missing_year' mode AND this was the initial (Flash) run
-    if (mode === 'missing_year' && !retryWithStrongerModel) {
-        // Find tracks that failed to get a valid year
-        const failedIds = tracks.filter(t => {
-           const res = resultsMap[t.TrackID];
-           return !res || res.year === "0" || res.year === "" || res.year === "Unknown";
-        }).map(t => t.TrackID);
-        
-        if (failedIds.length > 0) {
-            // console.log(`Retrying ${failedIds.length} tracks with Gemini 3 Pro...`);
-            
-            // Filter the original tracks list to only those that failed
-            const retryTracks = tracks.filter(t => failedIds.includes(t.TrackID));
-            
-            // Recursive call with retryWithStrongerModel = true
-            const retryResult = await generateTagsBatch(retryTracks, mode, true);
-            
-            // Merge the new results into the existing resultsMap
-            // This overwrites the "0" values with hopefully correct ones
-            Object.assign(resultsMap, retryResult.results);
-            
-            // Accumulate usage and cost
-            const totalCost = cost + retryResult.usage.cost;
-            const totalInput = usage.promptTokenCount + retryResult.usage.inputTokens;
-            const totalOutput = usage.candidatesTokenCount + retryResult.usage.outputTokens;
-            
-             return { 
-                results: resultsMap, 
-                usage: { 
-                    inputTokens: totalInput, 
-                    outputTokens: totalOutput, 
-                    cost: totalCost 
-                },
-                error: undefined 
-             };
-        }
     }
 
     return { 
