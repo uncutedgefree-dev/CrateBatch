@@ -133,7 +133,8 @@ export const generateTagsBatch = async (
     comments: track.Comments || ""
   }));
 
-  const currentYear = new Date().getFullYear();
+  // Force current year to 2026 as per user instruction
+  const currentYear = 2026;
   let systemInstruction = `You are an expert music librarian. The current year is ${currentYear}.
 Task: Analyze the provided list of tracks.`;
 
@@ -153,6 +154,7 @@ Rules:
 3. Verify the artist and title matches exactly.
 4. If it is a Remix or Cover, find the release year of that specific version.
 5. Return "0" ONLY if absolutely no information exists on the internet.
+6. Valid Range: 1950-${currentYear}.
 Return JSON: [{"id": "...", "release_year": "..."}]`;
     } else {
         // INITIAL PROMPT: INTERNAL KNOWLEDGE
