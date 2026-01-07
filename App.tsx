@@ -111,7 +111,7 @@ const App: React.FC = () => {
     }
 
     setActiveSearchQuery(query);
-    setToastMessage({ message: "AI Analyzing Request...", type: "info" });
+    setToastMessage({ message: "Analyzing Request...", type: "info" });
     
     try {
       const criteria = await interpretSearchQuery(query);
@@ -128,7 +128,7 @@ const App: React.FC = () => {
       console.error("Search failed", e);
       // On error, fallback to basic text search (which is already triggered by setActiveSearchQuery)
       setSmartFilter(null);
-      setToastMessage({ message: "AI Search Unavailable. Using basic search.", type: "error" });
+      setToastMessage({ message: "Analysis Unavailable. Using standard search.", type: "error" });
       setTimeout(() => setToastMessage(null), 3000);
     }
   };
@@ -156,7 +156,7 @@ const App: React.FC = () => {
     if (targetTracks.length === 0) return;
     setIsEnriching(true);
     setIsStatsVisible(true);
-    setTerminalLog(`[${new Date().toLocaleTimeString()}] Initializing ${mode} job (${targetTracks.length} items)...`);
+    setTerminalLog(`[${new Date().toLocaleTimeString()}] JOB START: ${mode.toUpperCase()} (${targetTracks.length} items)...`);
     
     const startTime = performance.now();
     let jobCost = 0;
@@ -352,7 +352,7 @@ const App: React.FC = () => {
     setIsEnriching(false);
     const finalDuration = performance.now() - startTime;
     setProcessingStats(prev => ({ ...prev, totalDuration: finalDuration, etaSeconds: 0 }));
-    setTerminalLog(prev => prev + `\n\n[${new Date().toLocaleTimeString()}] ✅ Job Complete! Total Cost: $${jobCost.toFixed(4)}`);
+    setTerminalLog(prev => prev + `\n\n[${new Date().toLocaleTimeString()}] DONE. Total Cost: $${jobCost.toFixed(4)}`);
   };
 
   const handleExport = () => {
@@ -360,7 +360,7 @@ const App: React.FC = () => {
     generateSmartPlaylists(fullXmlDataRef.current, tracks, ids, savedPlaylists);
     const xml = exportRekordboxXML(fullXmlDataRef.current);
     const url = URL.createObjectURL(new Blob([xml], { type: 'text/xml' }));
-    const a = document.createElement('a'); a.href = url; a.download = 'enriched.xml'; a.click();
+    const a = document.createElement('a'); a.href = url; a.download = 'cratebatch_export.xml'; a.click();
   };
 
   const handleAnalyzeSingle = async (trackId: string) => {
@@ -392,9 +392,6 @@ const App: React.FC = () => {
 
   // Helper to determine if a track needs full enrichment
   const needsEnrichment = (t: RekordboxTrack) => {
-      // It needs enrichment if:
-      // 1. It has NO Analysis object at all
-      // 2. It HAS an Analysis object, but the 'vibe' is 'Unknown' (which implies situation/sub-genre are also likely unknown/default)
       return !t.Analysis || t.Analysis.vibe === 'Unknown' || t.Analysis.vibe === undefined;
   };
 
@@ -413,17 +410,17 @@ const App: React.FC = () => {
               value={searchInput} 
               onChange={e => setSearchInput(e.target.value)} 
               onKeyDown={e => e.key === 'Enter' && handleSearch(searchInput)} 
-              className="bg-dj-panel border border-dj-border rounded-full py-1 px-6 text-sm focus:outline-none focus:border-dj-neon w-80 transition-all focus:w-96" 
+              className="bg-dj-panel border border-dj-border rounded-none py-1.5 px-6 text-sm focus:outline-none focus:border-dj-neon w-80 transition-all focus:w-96 text-white placeholder-dj-dim font-mono" 
             />
-            <button onClick={() => setShowEnrichmentWarning(true)} className="bg-dj-neon/10 text-dj-neon border border-dj-neon px-4 py-1.5 rounded text-sm font-bold uppercase hover:bg-dj-neon hover:text-black transition-all">AI Enrich</button>
-            <button onClick={handleExport} className="bg-dj-accent/10 text-dj-accent border border-dj-accent px-4 py-1.5 rounded text-sm font-bold uppercase hover:bg-dj-accent hover:text-white transition-all">Export</button>
-            <button onClick={() => { setTracks([]); setStatus(ParseStatus.IDLE); }} className="text-xs px-3 py-1.5 rounded border border-dj-border hover:text-red-500 hover:border-red-500">CLEAR</button>
+            <button onClick={() => setShowEnrichmentWarning(true)} className="bg-dj-neon text-black border border-dj-neon px-5 py-1.5 rounded-sm text-xs font-bold uppercase hover:bg-white hover:border-white transition-all tracking-wider">ENRICH</button>
+            <button onClick={handleExport} className="bg-transparent text-dj-neon border border-dj-neon px-5 py-1.5 rounded-sm text-xs font-bold uppercase hover:bg-dj-neon/10 transition-all tracking-wider">EXPORT XML</button>
+            <button onClick={() => { setTracks([]); setStatus(ParseStatus.IDLE); }} className="text-[10px] px-3 py-1.5 rounded-sm border border-dj-border text-dj-dim hover:text-red-500 hover:border-red-500 uppercase tracking-wider">CLOSE</button>
           </div>
         )}
       </header>
       <main className="flex-1 overflow-y-auto overflow-x-hidden no-scrollbar" ref={mainScrollRef as React.RefObject<HTMLDivElement>}>
         <div className="p-6 flex flex-col min-h-full">
-          {status === ParseStatus.IDLE && <div className="flex-1 flex flex-col items-center justify-center mt-20"><h2 className="text-2xl font-bold mb-4">Import Collection</h2><FileUploader onFileSelect={handleFileSelect} isLoading={false} /></div>}
+          {status === ParseStatus.IDLE && <div className="flex-1 flex flex-col items-center justify-center mt-20"><h2 className="text-2xl font-bold mb-4 tracking-tight">IMPORT COLLECTION</h2><FileUploader onFileSelect={handleFileSelect} isLoading={false} /></div>}
           {status === ParseStatus.SUCCESS && (
             <div className="flex flex-col gap-6 animate-fade-in">
                {isStatsVisible && (
@@ -455,17 +452,17 @@ const App: React.FC = () => {
                />
                <div className="flex items-center justify-between">
                  <div className="flex items-center gap-4">
-                   <div className="text-dj-dim text-xs font-mono">Showing {visibleTracks.length} tracks {activeFilterName && `(Filtered: ${activeFilterName})`}</div>
+                   <div className="text-dj-dim text-xs font-mono uppercase tracking-wider">Showing {visibleTracks.length} tracks {activeFilterName && `(Filtered: ${activeFilterName})`}</div>
                    {(activeFilterName || activeSearchQuery) && (
                      <button 
                        onClick={clearFilters} 
-                       className="flex items-center gap-1.5 px-3 py-1 bg-red-500/10 border border-red-500 rounded-full text-xs font-bold text-red-500 hover:bg-red-500 hover:text-white transition-colors"
+                       className="flex items-center gap-1.5 px-3 py-1 bg-red-500/10 border border-red-500 rounded-sm text-[10px] font-bold text-red-500 hover:bg-red-500 hover:text-white transition-colors uppercase"
                      >
                        <XCircle className="w-3 h-3" /> Clear Filters
                      </button>
                    )}
                  </div>
-                 {(activeFilterName || activeSearchQuery) && <button onClick={() => setShowPlaylistModal(true)} className="flex items-center gap-1.5 px-3 py-1 bg-green-500/10 border border-green-500 rounded-full text-xs font-bold text-green-500 hover:bg-green-500 hover:text-black"><ListPlus className="w-3 h-3" />Save as Playlist</button>}
+                 {(activeFilterName || activeSearchQuery) && <button onClick={() => setShowPlaylistModal(true)} className="flex items-center gap-1.5 px-3 py-1 bg-green-500/10 border border-green-500 rounded-sm text-[10px] font-bold text-green-500 hover:bg-green-500 hover:text-black uppercase"><ListPlus className="w-3 h-3" />Save Playlist</button>}
                </div>
                <TrackTable tracks={visibleTracks} onAnalyzeTrack={handleAnalyzeSingle} analyzingIds={activeProcessingIds} scrollElement={mainScrollRef.current} />
             </div>
@@ -476,9 +473,9 @@ const App: React.FC = () => {
       {showEnrichmentWarning && <EnrichmentWarningModal filteredCount={visibleTracks.length} totalCount={tracks.length} onProcessFiltered={() => { setShowEnrichmentWarning(false); processBatch(visibleTracks.filter(needsEnrichment), 'full'); }} onProcessAll={() => { setShowEnrichmentWarning(false); processBatch(tracks.filter(needsEnrichment), 'full'); }} onCancel={() => setShowEnrichmentWarning(false)} />}
       {showPlaylistModal && <PlaylistNameModal defaultValue={activeFilterName || activeSearchQuery || "New Playlist"} count={visibleTracks.length} onSave={name => { setSavedPlaylists(prev => [...prev, { name, trackIds: visibleTracks.map(t => t.TrackID) }]); setShowPlaylistModal(false); setToastMessage({ message: `Playlist "${name}" saved!`, type: "success" }); setTimeout(() => setToastMessage(null), 3000); }} onClose={() => setShowPlaylistModal(false)} />}
       {toastMessage && (
-        <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-[200] flex items-center gap-3 bg-dj-panel border ${toastMessage.type === 'error' ? 'border-red-500 text-red-100' : 'border-dj-neon/50 text-white'} px-6 py-3 rounded-full shadow-2xl animate-fade-in`}>
-          {toastMessage.type === 'error' ? <AlertCircle className="w-5 h-5 text-red-500" /> : <CheckCircle className="w-5 h-5 text-dj-neon" />}
-          <span className="font-bold text-sm">{toastMessage.message}</span>
+        <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-[200] flex items-center gap-3 bg-dj-panel border ${toastMessage.type === 'error' ? 'border-red-500 text-red-100' : 'border-dj-neon/50 text-white'} px-6 py-3 rounded-none shadow-2xl animate-fade-in`}>
+          {toastMessage.type === 'error' ? <AlertCircle className="w-4 h-4 text-red-500" /> : <CheckCircle className="w-4 h-4 text-dj-neon" />}
+          <span className="font-mono text-xs uppercase tracking-wider">{toastMessage.message}</span>
         </div>
       )}
     </div>

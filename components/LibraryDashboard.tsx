@@ -26,8 +26,8 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   if (active && payload && payload.length) {
     const data = payload[0].payload;
     return (
-      <div className="bg-dj-dark/95 border border-dj-border p-3 rounded-md shadow-2xl backdrop-blur-sm z-50">
-        <p className="text-white font-bold text-xs uppercase mb-1">{label || data.name}</p>
+      <div className="bg-dj-dark/95 border border-dj-border p-3 rounded-none shadow-2xl backdrop-blur-sm z-50">
+        <p className="text-white font-bold text-xs uppercase mb-1 font-mono">{label || data.name}</p>
         <p className="text-dj-neon font-mono text-sm">
           {payload[0].value} <span className="text-gray-500 text-xs">{data.unit || 'tracks'}</span>
         </p>
@@ -52,21 +52,21 @@ const LibraryDashboard: React.FC<LibraryDashboardProps> = ({
   return (
     <div className="flex flex-col gap-6 mb-6">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 min-h-[300px]">
-        <div className="bg-dj-panel border border-dj-border rounded-xl p-6 flex flex-col relative overflow-hidden shadow-lg">
+        <div className="bg-dj-panel border border-dj-border rounded-sm p-6 flex flex-col relative overflow-hidden shadow-lg">
            <div className="flex justify-between items-start mb-4">
-              <div className="flex items-center gap-2 text-white text-sm font-bold tracking-widest uppercase">
+              <div className="flex items-center gap-2 text-white text-sm font-bold tracking-widest uppercase font-mono">
                   <Activity className="w-4 h-4 text-dj-accent" />
                   Library Integrity
               </div>
               <div className="w-16 h-16 relative">
                  <ResponsiveContainer width="100%" height="100%">
-                   <RadialBarChart innerRadius="70%" outerRadius="100%" barSize={10} data={scoreData} startAngle={180} endAngle={0}>
+                   <RadialBarChart innerRadius="70%" outerRadius="100%" barSize={8} data={scoreData} startAngle={180} endAngle={0}>
                      <RadialPolarAngleAxis type="number" domain={[0, 100]} angleAxisId={0} tick={false} />
-                     <RadialBar background dataKey="value" cornerRadius={30} />
+                     <RadialBar background dataKey="value" cornerRadius={0} />
                    </RadialBarChart>
                  </ResponsiveContainer>
                  <div className="absolute inset-0 flex items-center justify-center pt-2">
-                    <span className={`text-sm font-bold ${libraryScore > 80 ? 'text-dj-neon' : libraryScore > 50 ? 'text-yellow-400' : 'text-red-500'}`}>{libraryScore}%</span>
+                    <span className={`text-sm font-mono font-bold ${libraryScore > 80 ? 'text-dj-neon' : libraryScore > 50 ? 'text-yellow-400' : 'text-red-500'}`}>{libraryScore}%</span>
                  </div>
               </div>
            </div>
@@ -78,28 +78,28 @@ const LibraryDashboard: React.FC<LibraryDashboardProps> = ({
               ].map((m, i) => (
                 <div key={i} className="flex justify-between items-center group">
                    <div className="flex flex-col">
-                      <span className="text-xs text-gray-400 uppercase tracking-wide">{m.label}</span>
+                      <span className="text-[10px] text-gray-400 uppercase tracking-wider font-mono">{m.label}</span>
                       <span className={`text-lg font-mono font-bold ${m.count > 0 ? m.color : 'text-gray-600'}`}>{m.count.toLocaleString()}</span>
                    </div>
                    {m.count > 0 && (
-                     <button onClick={m.action} disabled={isProcessing} className="px-3 py-1 text-[10px] font-bold uppercase border border-dj-border rounded bg-white/5 hover:bg-white hover:text-black transition-all">{m.btn}</button>
+                     <button onClick={m.action} disabled={isProcessing} className="px-3 py-1 text-[10px] font-bold uppercase border border-dj-border rounded-sm bg-white/5 hover:bg-white hover:text-black transition-all tracking-wider">{m.btn}</button>
                    )}
                 </div>
               ))}
               {savedPlaylists.length > 0 && (
                 <div className="flex justify-between items-center pt-2 border-t border-white/5">
-                   <div className="flex flex-col"><span className="text-xs text-dj-neon uppercase tracking-wide">Pending Export</span><span className="text-lg font-mono font-bold text-white">{savedPlaylists.length} Playlists</span></div>
+                   <div className="flex flex-col"><span className="text-[10px] text-dj-neon uppercase tracking-wider font-mono">Pending Export</span><span className="text-lg font-mono font-bold text-white">{savedPlaylists.length} Playlists</span></div>
                    <ListPlus className="w-5 h-5 text-dj-neon" />
                 </div>
               )}
            </div>
         </div>
 
-        <div className="bg-dj-panel border border-dj-border rounded-xl p-6 flex flex-col relative overflow-hidden shadow-lg">
-           <div className="flex items-center justify-between mb-2 text-white text-sm font-bold tracking-widest uppercase border-b border-white/5 pb-2">
+        <div className="bg-dj-panel border border-dj-border rounded-sm p-6 flex flex-col relative overflow-hidden shadow-lg">
+           <div className="flex items-center justify-between mb-2 text-white text-sm font-bold tracking-widest uppercase border-b border-white/5 pb-2 font-mono">
               <div className="flex items-center gap-2"><Map className="w-4 h-4 text-dj-neon" />Context Radar</div>
            </div>
-           <div className="flex-1 w-full h-full min-h-0 relative z-10 text-xs">
+           <div className="flex-1 w-full h-full min-h-0 relative z-10 text-xs font-mono">
               <ResponsiveContainer width="100%" height="100%">
                 <RadarChart cx="50%" cy="50%" outerRadius="70%" data={situationDistribution}>
                   <PolarGrid stroke="#333" strokeDasharray="3 3" />
@@ -112,8 +112,8 @@ const LibraryDashboard: React.FC<LibraryDashboardProps> = ({
            </div>
         </div>
 
-        <div className="bg-dj-panel border border-dj-border rounded-xl p-6 flex flex-col relative overflow-hidden shadow-lg">
-          <div className="flex items-center justify-between mb-2 text-white text-sm font-bold tracking-widest uppercase border-b border-white/5 pb-2">
+        <div className="bg-dj-panel border border-dj-border rounded-sm p-6 flex flex-col relative overflow-hidden shadow-lg">
+          <div className="flex items-center justify-between mb-2 text-white text-sm font-bold tracking-widest uppercase border-b border-white/5 pb-2 font-mono">
              <div className="flex items-center gap-2"><Hash className="w-4 h-4 text-purple-400" />Harmonic Keys</div>
           </div>
           <div className="flex-1 w-full h-full min-h-0 relative z-10 flex items-center justify-center">
@@ -133,49 +133,49 @@ const LibraryDashboard: React.FC<LibraryDashboardProps> = ({
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-[250px]">
-        <div className="bg-dj-panel border border-dj-border rounded-xl p-6 flex flex-col relative overflow-hidden shadow-lg">
-          <div className="flex items-center gap-2 mb-2 text-white text-sm font-bold tracking-widest uppercase border-b border-white/5 pb-2">
+        <div className="bg-dj-panel border border-dj-border rounded-sm p-6 flex flex-col relative overflow-hidden shadow-lg">
+          <div className="flex items-center gap-2 mb-2 text-white text-sm font-bold tracking-widest uppercase border-b border-white/5 pb-2 font-mono">
              <Disc className="w-4 h-4 text-dj-neon" /> Top Genres
           </div>
           <div className="flex-1 w-full h-full min-h-0 relative z-10 flex items-center justify-center">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={genreDistribution} cx="50%" cy="50%" innerRadius={50} outerRadius={70} paddingAngle={3} dataKey="value" stroke="none" cornerRadius={2} onClick={(data) => onFilter('genre', data.name)} className="cursor-pointer">
+                  <Pie data={genreDistribution} cx="50%" cy="50%" innerRadius={50} outerRadius={70} paddingAngle={3} dataKey="value" stroke="none" cornerRadius={0} onClick={(data) => onFilter('genre', data.name)} className="cursor-pointer">
                     {genreDistribution.map((_, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
                   </Pie>
                   <Tooltip content={<CustomTooltip />} />
                 </PieChart>
               </ResponsiveContainer>
-              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none pt-6"><span className="text-xl font-bold text-white">{genreDistribution.length}</span><span className="text-[9px] text-dj-dim uppercase">Genres</span></div>
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none pt-6"><span className="text-xl font-bold font-mono text-white">{genreDistribution.length}</span><span className="text-[9px] text-dj-dim uppercase tracking-wider font-mono">Genres</span></div>
           </div>
         </div>
 
-        <div className="bg-dj-panel border border-dj-border rounded-xl p-6 flex flex-col relative overflow-hidden shadow-lg">
-          <div className="flex items-center gap-2 mb-2 text-white text-sm font-bold tracking-widest uppercase border-b border-white/5 pb-2">
+        <div className="bg-dj-panel border border-dj-border rounded-sm p-6 flex flex-col relative overflow-hidden shadow-lg">
+          <div className="flex items-center gap-2 mb-2 text-white text-sm font-bold tracking-widest uppercase border-b border-white/5 pb-2 font-mono">
              <BarChart3 className="w-4 h-4 text-purple-400" /> Vibe Analysis
           </div>
-          <div className="flex-1 w-full h-full min-h-0 text-xs relative z-10 -ml-4">
+          <div className="flex-1 w-full h-full min-h-0 text-xs relative z-10 -ml-4 font-mono">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={vibeDistribution.slice(0, 8)} layout="vertical" margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
                 <XAxis type="number" hide />
                 <YAxis dataKey="name" type="category" width={90} axisLine={false} tickLine={false} interval={0} tick={{ fill: '#888', fontSize: 10 }} />
                 <Tooltip cursor={{fill: 'rgba(255,255,255,0.05)'}} content={<CustomTooltip />} />
-                <Bar dataKey="value" fill="#7000ff" radius={[0, 4, 4, 0]} barSize={12} onClick={(data) => onFilter('vibe', data.name)} className="cursor-pointer" />
+                <Bar dataKey="value" fill="#7000ff" radius={[0, 0, 0, 0]} barSize={12} onClick={(data) => onFilter('vibe', data.name)} className="cursor-pointer" />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        <div className="bg-dj-panel border border-dj-border rounded-xl p-6 flex flex-col relative overflow-hidden shadow-lg">
-          <div className="flex items-center gap-2 mb-2 text-white text-sm font-bold tracking-widest uppercase border-b border-white/5 pb-2">
+        <div className="bg-dj-panel border border-dj-border rounded-sm p-6 flex flex-col relative overflow-hidden shadow-lg">
+          <div className="flex items-center gap-2 mb-2 text-white text-sm font-bold tracking-widest uppercase border-b border-white/5 pb-2 font-mono">
              <Clock className="w-4 h-4 text-blue-400" /> Timeline
           </div>
-          <div className="flex-1 w-full h-full min-h-0 relative z-10">
+          <div className="flex-1 w-full h-full min-h-0 relative z-10 font-mono">
              <ResponsiveContainer width="100%" height="100%">
                <BarChart data={activeTimeline}>
                  <XAxis dataKey="name" tick={{fontSize: 9, fill: '#666'}} axisLine={false} tickLine={false} interval={Math.floor(activeTimeline.length / 5)} />
                  <Tooltip cursor={{fill: 'rgba(255,255,255,0.05)'}} content={<CustomTooltip />} />
-                 <Bar dataKey="value" fill="#333" radius={[2, 2, 0, 0]} onClick={(data) => onFilter('year', data.name)} className="cursor-pointer hover:fill-dj-neon transition-colors" />
+                 <Bar dataKey="value" fill="#333" radius={[0, 0, 0, 0]} onClick={(data) => onFilter('year', data.name)} className="cursor-pointer hover:fill-dj-neon transition-colors" />
                </BarChart>
              </ResponsiveContainer>
           </div>

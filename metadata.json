@@ -1,5 +1,5 @@
 {
-  "name": "Rekordbox Library Analyzer",
-  "description": "A dark-mode DJ tool to parse, view, and analyze Rekordbox collection XML files.",
+  "name": "CrateBatch",
+  "description": "Perform More, Tag Less. The automated metadata utility for professional DJs.",
   "requestFramePermissions": []
 }
