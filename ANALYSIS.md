@@ -94,10 +94,13 @@ The ratio between Annual and Lifetime is currently **16.6x**. This is highly unu
 *   **Lifetime:** $89.00 - $99.00
 *   *Psychology:* Accessible to hobbyists. $29 is a "throwaway" amount for a year of saved time. $99 feels like a solid investment for a "keep forever" tool.
 
-**Recommended Choice:** **Option B ($29/yr or $99 Lifetime)**
+**Recommended Choice:** **Option B ($29/yr or $99 Lifetime - WITH CAUTION)**
 *   This fits the "Utility" nature of the tool.
-*   $15/year is likely too low to cover your own API costs (OpenAI/Gemini) if you are proxying them, or it leaves too much money on the table if users bring their own keys.
-*   *Note on API Costs:* Since the app requires the user to provide their own Gemini API Key (`GEMINI_API_KEY` in `.env`), your server costs are zero. This justifies a lower price, but $15/year is still undervalued for the time saved.
+*   **CRITICAL UPDATE ON COSTS:** Since you are paying for the Gemini API usage for all users, every track processed costs you money.
+    *   *Risk:* A "Lifetime" user who processes 10,000 tracks a month is a financial liability forever.
+    *   *Mitigation:* You **must** implement "Fair Use Limits" (e.g., 2,000 tracks/month for Lifetime users) or price the Lifetime license much higher to buffer for heavy usage.
+*   $15/year is extremely risky if you are covering API costs. If a user processes a large library, you could lose money on that subscription.
+*   **Recommendation:** Move to a pure subscription model ($4.99/mo or $39/yr) or price the Lifetime option at $149+ to cover the "API Risk Premium".
 
 ---
 
