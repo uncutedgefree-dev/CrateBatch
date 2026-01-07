@@ -59,8 +59,8 @@ export const interpretSearchQuery = async (query: string): Promise<SmartFilterCr
       body: JSON.stringify({ 
         query, 
         taxonomy: { vibes: VIBE_TAGS, genres: MICRO_GENRE_TAGS, situations: SITUATION_TAGS },
-        prompt: prompt, // Sending prompt explicitly in case backend uses it directly
-        model: "gemini-3-pro-preview"
+        prompt: prompt,
+        model: "gemini-3-flash-preview" // Using requested flash model
       })
     });
 
@@ -121,7 +121,8 @@ export interface BatchResponse {
 
 export const generateTagsBatch = async (
   tracks: RekordboxTrack[],
-  mode: 'full' | 'missing_genre' | 'missing_year' = 'full'
+  mode: 'full' | 'missing_genre' | 'missing_year' = 'full',
+  isRetry: boolean = false
 ): Promise<BatchResponse> => {
   const tracksPayload = tracks.map(track => ({
     id: track.TrackID,
@@ -136,54 +137,61 @@ export const generateTagsBatch = async (
   let systemInstruction = `You are an expert music librarian. The current year is ${currentYear}.
 Task: Analyze the provided list of tracks.`;
 
+  // MODEL SELECTION STRATEGY
+  // Initial Pass: Gemini 3 Flash Preview (Internal Knowledge)
+  // Retry Pass: Gemini 2.5 Pro (Grounded Search)
+  const model = isRetry ? "gemini-2.5-pro" : "gemini-3-flash-preview";
+  
   if (mode === 'missing_year') {
-    systemInstruction += `\nRules:
-1. Identify the ORIGINAL release year for each track based on the Artist and Title.
-2. CRITICAL: Identify if the track is a "Utility Edit" (DJ Intro, Redrum, Club Edit, Extended Mix, Clean, Dirty).
-3. FOR UTILITY EDITS: You MUST return the ORIGINAL song release year, NOT the year the edit was uploaded to the record pool.
-   - Example: "50 Cent - In Da Club (DJCity Intro)" -> Return "2003" (Original), NOT "2023" (Pool Upload).
-   - Example: "Earth, Wind & Fire - September (BPM Supreme Redrum)" -> Return "1978".
-4. ONLY return a newer year if the track is a distinct **OFFICIAL REMIX** or **COVER** by a different artist that changes the era.
-   - Example: "Tracy Chapman - Fast Car (Jonas Blue Remix)" -> Return "2015".
-   - Example: "Luke Combs - Fast Car" -> Return "2023".
-5. Ignore labels like "Intro", "Dirty", "Clean", "Hype" when identifying the core song.
-6. STRICTLY NO GUESSING. If you do not know the track or are unsure, return "0".
-7. Valid Range: 1950-${currentYear}.
+    if (isRetry) {
+        // RETRY PROMPT: GROUNDED SEARCH
+        systemInstruction += `\nMODE: DEEP SEARCH (GROUNDING ENABLED)
+Rules:
+1. USE GOOGLE SEARCH to find the exact release date of the track.
+2. If the track is a DJ Utility Edit (Intro, Dirty, Club Edit), you MUST find the **ORIGINAL SONG'S** release year.
+   - Example: "50 Cent - In Da Club (DJCity Intro)" -> Search for "50 Cent In Da Club Release Date" -> Return "2003".
+3. Verify the artist and title matches exactly.
+4. If it is a Remix or Cover, find the release year of that specific version.
+5. Return "0" ONLY if absolutely no information exists on the internet.
 Return JSON: [{"id": "...", "release_year": "..."}]`;
+    } else {
+        // INITIAL PROMPT: INTERNAL KNOWLEDGE
+        systemInstruction += `\nRules:
+1. Identify the ORIGINAL release year using your internal knowledge.
+2. Identify if the track is a "Utility Edit" (DJ Intro, Redrum, Club Edit, Extended Mix).
+3. FOR UTILITY EDITS: Return the ORIGINAL song release year.
+   - Example: "50 Cent - In Da Club (DJCity Intro)" -> "2003" (Original).
+4. FOR REMIXES/COVERS: Return the year of that specific version.
+5. **CONFIDENCE CHECK**: If you are less than 90% confident, or if the track is obscure, return "0". We will check it with a search engine in the next step.
+6. Valid Range: 1950-${currentYear}.
+Return JSON: [{"id": "...", "release_year": "..."}]`;
+    }
   } else if (mode === 'missing_genre') {
-    // UPDATED INSTRUCTION FOR MISSING GENRE MODE
     systemInstruction += `\nRules:
 1. Identify the BROAD MAIN GENRE for the track.
 2. Use ONLY these Broad Genres: ${MAIN_GENRE_TAGS.join(', ')}
 3. Return JSON: [{"id": "...", "genre": "..."}]`;
   } else {
-    // UPDATED INSTRUCTION FOR FULL MODE
+    // FULL MODE
     systemInstruction += `\nRules:
 1. Identify ORIGINAL release year.
 2. Use ONLY tags provided.
-3. STRICTLY IGNORE BPM when determining Genre. A Hip Hop track at 80BPM is NOT R&B.
-4. "R&B" is for Rhythm & Blues, Neo-Soul, or Slow Jams. Rap/Trap verses = Hip Hop.
-5. AVOID BROAD GENRES like "Hip Hop", "Pop", "Rock", "Electronic", "Dance" if a more specific micro-genre applies.
-6. Use "Trap", "Boom Bap", "Drill", "Grime" for Hip-Hop subgenres.
-7. Use "Contemporary R&B", "New Jack Swing", "Neo Soul" for R&B subgenres.
-8. If the Artist is a Rapper, default to "Trap" or "Boom Bap" depending on the era/style, unless it is clearly an R&B crossover.
-VIBES: ${VIBE_TAGS.join(', ')}
-GENRES: ${MICRO_GENRE_TAGS.join(', ')}
-SITUATIONS: ${SITUATION_TAGS.join(', ')}
+3. STRICTLY IGNORE BPM when determining Genre.
+4. VIBES: ${VIBE_TAGS.join(', ')}
+5. GENRES: ${MICRO_GENRE_TAGS.join(', ')}
+6. SITUATIONS: ${SITUATION_TAGS.join(', ')}
 Return JSON: [{"id": "...", "vibe": "...", "genre": "...", "situation": "...", "release_year": "...", "hashtags": "#Genre #Vibe #Situation"}]`;
   }
 
   try {
-    // ALWAYS USE PRO MODEL
-    const model = "gemini-3-pro-preview";
-    
     const response = await fetch(ENRICH_PROXY_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
         tracks: tracksPayload, 
         prompt: systemInstruction,
-        model: model 
+        model: model,
+        googleSearch: isRetry // Enable grounding only on retry
       })
     });
 
@@ -193,9 +201,9 @@ Return JSON: [{"id": "...", "vibe": "...", "genre": "...", "situation": "...", "
     const resultsMap: Record<string, AIAnalysis> = {};
     const usage = res.data.usageMetadata || { promptTokenCount: 0, candidatesTokenCount: 0 };
     
-    // Cost estimation for Pro model
-    const inputCostPerToken = 0.0000035;
-    const outputCostPerToken = 0.0000105;
+    // Cost estimation (approximate relative diff)
+    const inputCostPerToken = isRetry ? 0.0000035 : 0.000000075;
+    const outputCostPerToken = isRetry ? 0.0000105 : 0.00000030;
     const cost = ((usage.promptTokenCount * inputCostPerToken) + (usage.candidatesTokenCount * outputCostPerToken));
 
     const text = res.data.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -206,7 +214,6 @@ Return JSON: [{"id": "...", "vibe": "...", "genre": "...", "situation": "...", "
         const items = Array.isArray(parsed) ? parsed : [parsed];
         items.forEach((item: any) => {
           if (item.id) {
-            // Determine which genre set to validate against
             const genreListToValidate = mode === 'missing_genre' ? MAIN_GENRE_TAGS : MICRO_GENRE_TAGS;
 
             resultsMap[item.id] = {
@@ -219,6 +226,43 @@ Return JSON: [{"id": "...", "vibe": "...", "genre": "...", "situation": "...", "
           }
         });
       }
+    }
+
+    // AUTO-RETRY LOGIC FOR MISSING YEARS
+    // If we are in 'missing_year' mode AND this was the initial (Flash) run
+    if (mode === 'missing_year' && !isRetry) {
+        // Find tracks that failed to get a confident year
+        const failedIds = tracks.filter(t => {
+           const res = resultsMap[t.TrackID];
+           // Retry if year is missing, "0", "Unknown", or if we got no result
+           return !res || res.year === "0" || res.year === "" || res.year === "Unknown";
+        }).map(t => t.TrackID);
+        
+        if (failedIds.length > 0) {
+            // Filter tracks that need retry
+            const retryTracks = tracks.filter(t => failedIds.includes(t.TrackID));
+            
+            // Recursive call with isRetry=true (triggers gemini-2.5-pro + grounding)
+            const retryResult = await generateTagsBatch(retryTracks, mode, true);
+            
+            // Merge results: overwrite failures with new grounded results
+            Object.assign(resultsMap, retryResult.results);
+            
+            // Merge Usage & Cost
+            const totalCost = cost + retryResult.usage.cost;
+            const totalInput = usage.promptTokenCount + retryResult.usage.inputTokens;
+            const totalOutput = usage.candidatesTokenCount + retryResult.usage.outputTokens;
+            
+             return { 
+                results: resultsMap, 
+                usage: { 
+                    inputTokens: totalInput, 
+                    outputTokens: totalOutput, 
+                    cost: totalCost 
+                },
+                error: undefined 
+             };
+        }
     }
 
     return { 
