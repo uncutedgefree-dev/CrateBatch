@@ -136,12 +136,17 @@ export const generateTagsBatch = async (
 Task: Analyze the provided list of tracks.`;
 
   if (mode === 'missing_year') {
+    // UPDATED PROMPT: Prioritize ORIGINAL YEAR for utility edits
     systemInstruction += `\nRules:
 1. Identify the ORIGINAL release year for each track based on the Artist and Title.
-2. Search your internal knowledge base for metadata from popular DJ record pools (DJCity, BPM Supreme, Franchise Record Pool, Club Killers, Direct Music Service).
-3. If the track is a "DJ Intro", "Club Edit", "Redrum", or "Remix" found on these pools, use the year the EDIT was released if available, otherwise use the original song year.
-4. IGNORE "Intro", "Clean", "Dirty", "Extended Mix" labels when determining the core song identity, but use them to identify if it's a specific pool release.
-5. If it is a known Remix or Cover, provide the year that specific version was released.
+2. CRITICAL: Identify if the track is a "Utility Edit" (DJ Intro, Redrum, Club Edit, Extended Mix, Clean, Dirty).
+3. FOR UTILITY EDITS: You MUST return the ORIGINAL song release year, NOT the year the edit was uploaded to the record pool.
+   - Example: "50 Cent - In Da Club (DJCity Intro)" -> Return "2003" (Original), NOT "2023" (Pool Upload).
+   - Example: "Earth, Wind & Fire - September (BPM Supreme Redrum)" -> Return "1978".
+4. ONLY return a newer year if the track is a distinct **OFFICIAL REMIX** or **COVER** by a different artist that changes the era.
+   - Example: "Tracy Chapman - Fast Car (Jonas Blue Remix)" -> Return "2015".
+   - Example: "Luke Combs - Fast Car" -> Return "2023".
+5. Ignore labels like "Intro", "Dirty", "Clean", "Hype" when identifying the core song.
 6. STRICTLY NO GUESSING. If you do not know the track or are unsure, return "0".
 7. Valid Range: 1950-${currentYear}.
 Return JSON: [{"id": "...", "release_year": "..."}]`;
