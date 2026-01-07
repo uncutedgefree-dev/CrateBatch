@@ -120,7 +120,8 @@ export interface BatchResponse {
 
 export const generateTagsBatch = async (
   tracks: RekordboxTrack[],
-  mode: 'full' | 'missing_genre' | 'missing_year' = 'full'
+  mode: 'full' | 'missing_genre' | 'missing_year' = 'full',
+  retryWithStrongerModel: boolean = false
 ): Promise<BatchResponse> => {
   const tracksPayload = tracks.map(track => ({
     id: track.TrackID,
@@ -136,7 +137,6 @@ export const generateTagsBatch = async (
 Task: Analyze the provided list of tracks.`;
 
   if (mode === 'missing_year') {
-    // UPDATED PROMPT: Prioritize ORIGINAL YEAR for utility edits
     systemInstruction += `\nRules:
 1. Identify the ORIGINAL release year for each track based on the Artist and Title.
 2. CRITICAL: Identify if the track is a "Utility Edit" (DJ Intro, Redrum, Club Edit, Extended Mix, Clean, Dirty).
@@ -174,10 +174,17 @@ Return JSON: [{"id": "...", "vibe": "...", "genre": "...", "situation": "...", "
   }
 
   try {
+    // User requested specific models: Flash first, then Pro for retries
+    const model = retryWithStrongerModel ? "gemini-3-pro-preview" : "gemini-3-flash-preview";
+    
     const response = await fetch(ENRICH_PROXY_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tracks: tracksPayload, prompt: systemInstruction })
+      body: JSON.stringify({ 
+        tracks: tracksPayload, 
+        prompt: systemInstruction,
+        model: model 
+      })
     });
 
     const res = await response.json();
@@ -185,7 +192,11 @@ Return JSON: [{"id": "...", "vibe": "...", "genre": "...", "situation": "...", "
 
     const resultsMap: Record<string, AIAnalysis> = {};
     const usage = res.data.usageMetadata || { promptTokenCount: 0, candidatesTokenCount: 0 };
-    const cost = ((usage.promptTokenCount * 0.000000075) + (usage.candidatesTokenCount * 0.00000030));
+    
+    // Cost estimation (approximate relative difference between Flash and Pro)
+    const inputCostPerToken = retryWithStrongerModel ? 0.0000035 : 0.000000075;
+    const outputCostPerToken = retryWithStrongerModel ? 0.0000105 : 0.00000030;
+    const cost = ((usage.promptTokenCount * inputCostPerToken) + (usage.candidatesTokenCount * outputCostPerToken));
 
     const text = res.data.candidates?.[0]?.content?.parts?.[0]?.text;
     if (text) {
@@ -208,6 +219,45 @@ Return JSON: [{"id": "...", "vibe": "...", "genre": "...", "situation": "...", "
           }
         });
       }
+    }
+
+    // RETRY STRATEGY
+    // If we are in 'missing_year' mode AND this was the initial (Flash) run
+    if (mode === 'missing_year' && !retryWithStrongerModel) {
+        // Find tracks that failed to get a valid year
+        const failedIds = tracks.filter(t => {
+           const res = resultsMap[t.TrackID];
+           return !res || res.year === "0" || res.year === "" || res.year === "Unknown";
+        }).map(t => t.TrackID);
+        
+        if (failedIds.length > 0) {
+            // console.log(`Retrying ${failedIds.length} tracks with Gemini 3 Pro...`);
+            
+            // Filter the original tracks list to only those that failed
+            const retryTracks = tracks.filter(t => failedIds.includes(t.TrackID));
+            
+            // Recursive call with retryWithStrongerModel = true
+            const retryResult = await generateTagsBatch(retryTracks, mode, true);
+            
+            // Merge the new results into the existing resultsMap
+            // This overwrites the "0" values with hopefully correct ones
+            Object.assign(resultsMap, retryResult.results);
+            
+            // Accumulate usage and cost
+            const totalCost = cost + retryResult.usage.cost;
+            const totalInput = usage.promptTokenCount + retryResult.usage.inputTokens;
+            const totalOutput = usage.candidatesTokenCount + retryResult.usage.outputTokens;
+            
+             return { 
+                results: resultsMap, 
+                usage: { 
+                    inputTokens: totalInput, 
+                    outputTokens: totalOutput, 
+                    cost: totalCost 
+                },
+                error: undefined 
+             };
+        }
     }
 
     return { 
