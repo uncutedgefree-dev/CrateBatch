@@ -117,11 +117,6 @@ const validateTag = (tag: string | undefined, allowed: string[]): string => {
 const cleanTitle = (title: string): string => {
   let cleaned = title;
   // Utility tags to remove (Case insensitive)
-  // We want to remove (DJCity Intro), (Club Edit), etc to find the ORIGINAL song
-  // But we want to keep (Remix) if we want the remix year, OR remove it if we want original.
-  // Rule: "If the track is a DJ Utility Edit... find the ORIGINAL SONG'S release year."
-  // "If it is a Remix or Cover, find the release year of that specific version."
-  // So we remove Utility tags, but KEEP Remix tags.
   
   const utilityPatterns = [
     /\s*[\(\[].*?intro.*?[\)\]]/gi,
@@ -134,7 +129,7 @@ const cleanTitle = (title: string): string => {
     /\s*[\(\[].*?redrum.*?[\)\]]/gi,
     /\s*[\(\[].*?djcity.*?[\)\]]/gi,
     /\s*[\(\[].*?short.*?[\)\]]/gi,
-    /\s*[\(\[].*?edit.*?[\)\]]/gi, // Be careful with "Edit", sometimes "Radio Edit" is the main one.
+    /\s*[\(\[].*?edit.*?[\)\]]/gi,
   ];
 
   utilityPatterns.forEach(p => {
@@ -172,8 +167,16 @@ export const generateTagsBatch = async (
     
     if (isRetry && mode === 'missing_year') {
         const cleanedName = cleanTitle(track.Name);
-        const query = `${track.Artist} ${cleanedName}`;
-        const encodedQuery = encodeURIComponent(query);
+        
+        // Build query string properly with + for spaces
+        const artist = track.Artist ? track.Artist.trim() : "";
+        const queryParts = [];
+        if (artist) queryParts.push(artist);
+        if (cleanedName) queryParts.push(cleanedName);
+        
+        const queryString = queryParts.join(" ");
+        const encodedQuery = encodeURIComponent(queryString).replace(/%20/g, "+");
+        
         const searchUrl = `https://musicbrainz.org/search?query=${encodedQuery}&type=release&limit=25&method=indexed`;
         
         return {
@@ -247,8 +250,8 @@ Return JSON: [{"id": "...", "vibe": "...", "genre": "...", "situation": "...", "
         tracks: tracksPayload, 
         prompt: systemInstruction,
         model: model,
-        googleSearch: false, // User requested "instead of google grounding"
-        useUrlContext: isRetry // Enable URL Context on retry
+        googleSearch: false, 
+        useUrlContext: isRetry 
       })
     });
 
