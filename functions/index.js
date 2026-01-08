@@ -2,15 +2,6 @@ const { onRequest } = require("firebase-functions/v2/https");
 const logger = require("firebase-functions/logger");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
-// Helper to get initialized model
-const getModel = (apiKey) => {
-  const genAI = new GoogleGenerativeAI(apiKey);
-  return genAI.getGenerativeModel({ 
-    model: "gemini-2.0-flash", 
-    generationConfig: { responseMimeType: "application/json" } 
-  });
-};
-
 exports.enrichBatch = onRequest({ 
   cors: true,
   timeoutSeconds: 540,
@@ -18,7 +9,7 @@ exports.enrichBatch = onRequest({
   secrets: ["GEMINI_API_KEY"] 
 }, async (request, response) => {
   try {
-    const { tracks, prompt } = request.body;
+    const { tracks, prompt, model: requestedModel, googleSearch, useUrlContext } = request.body;
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!tracks || !prompt || !apiKey) {
@@ -28,7 +19,29 @@ exports.enrichBatch = onRequest({
       return;
     }
 
-    const model = getModel(apiKey);
+    const genAI = new GoogleGenerativeAI(apiKey);
+    
+    // Default to a known stable model if not specified, but prefer the requested one
+    const modelName = requestedModel || "gemini-2.0-flash";
+    
+    // Configure tools
+    const tools = [];
+    if (googleSearch) {
+      tools.push({ googleSearch: {} });
+    }
+    // Support for URL Context tool (requires appropriate model e.g. gemini-2.5-flash)
+    if (useUrlContext) {
+      tools.push({ urlContext: {} });
+    }
+    
+    const model = genAI.getGenerativeModel({ 
+      model: modelName,
+      tools: tools,
+      generationConfig: { 
+        responseMimeType: "application/json" 
+      } 
+    });
+
     const result = await model.generateContent(prompt + "\n\nTracks:\n" + JSON.stringify(tracks));
     const aiResponse = await result.response;
     const text = aiResponse.text();
@@ -48,7 +61,6 @@ exports.enrichBatch = onRequest({
   }
 });
 
-// New Function: Semantic Search / Playlist Generator
 exports.generatePlaylist = onRequest({ 
   cors: true,
   timeoutSeconds: 60,
@@ -56,7 +68,7 @@ exports.generatePlaylist = onRequest({
   secrets: ["GEMINI_API_KEY"] 
 }, async (request, response) => {
   try {
-    const { query, taxonomy, prompt: customPrompt } = request.body;
+    const { query, taxonomy, prompt: customPrompt, model: requestedModel } = request.body;
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!query || !apiKey) {
@@ -64,10 +76,16 @@ exports.generatePlaylist = onRequest({
       return;
     }
 
-    const model = getModel(apiKey);
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const modelName = requestedModel || "gemini-2.0-flash";
     
-    // Prompt to convert natural language into structured filters
-    // Use customPrompt from client if available (allows frontend iteration)
+    const model = genAI.getGenerativeModel({ 
+      model: modelName,
+      generationConfig: { 
+        responseMimeType: "application/json" 
+      } 
+    });
+    
     const prompt = customPrompt || `
       You are an expert DJ music librarian.
       User Query: "${query}"

@@ -113,6 +113,40 @@ const validateTag = (tag: string | undefined, allowed: string[]): string => {
   return match || "Unknown";
 };
 
+// Helper to clean track titles
+const cleanTitle = (title: string): string => {
+  let cleaned = title;
+  // Utility tags to remove (Case insensitive)
+  // We want to remove (DJCity Intro), (Club Edit), etc to find the ORIGINAL song
+  // But we want to keep (Remix) if we want the remix year, OR remove it if we want original.
+  // Rule: "If the track is a DJ Utility Edit... find the ORIGINAL SONG'S release year."
+  // "If it is a Remix or Cover, find the release year of that specific version."
+  // So we remove Utility tags, but KEEP Remix tags.
+  
+  const utilityPatterns = [
+    /\s*[\(\[].*?intro.*?[\)\]]/gi,
+    /\s*[\(\[].*?clean.*?[\)\]]/gi,
+    /\s*[\(\[].*?dirty.*?[\)\]]/gi,
+    /\s*[\(\[].*?explicit.*?[\)\]]/gi,
+    /\s*[\(\[].*?radio.*?[\)\]]/gi,
+    /\s*[\(\[].*?extended.*?[\)\]]/gi,
+    /\s*[\(\[].*?club.*?[\)\]]/gi,
+    /\s*[\(\[].*?redrum.*?[\)\]]/gi,
+    /\s*[\(\[].*?djcity.*?[\)\]]/gi,
+    /\s*[\(\[].*?short.*?[\)\]]/gi,
+    /\s*[\(\[].*?edit.*?[\)\]]/gi, // Be careful with "Edit", sometimes "Radio Edit" is the main one.
+  ];
+
+  utilityPatterns.forEach(p => {
+    cleaned = cleaned.replace(p, "");
+  });
+
+  // Also remove standalone DJCity if present
+  cleaned = cleaned.replace(/\bdjcity\b/gi, "");
+  
+  return cleaned.replace(/\s+/g, " ").trim();
+};
+
 export interface BatchResponse {
   results: Record<string, AIAnalysis>;
   usage: BatchUsage;
@@ -124,14 +158,33 @@ export const generateTagsBatch = async (
   mode: 'full' | 'missing_genre' | 'missing_year' = 'full',
   isRetry: boolean = false
 ): Promise<BatchResponse> => {
-  const tracksPayload = tracks.map(track => ({
-    id: track.TrackID,
-    name: track.Name,
-    artist: track.Artist,
-    bpm: track.AverageBpm,
-    key: track.Tonality,
-    comments: track.Comments || ""
-  }));
+  
+  // Construct payload with URL Context if retrying
+  const tracksPayload = tracks.map(track => {
+    const base = {
+      id: track.TrackID,
+      name: track.Name,
+      artist: track.Artist,
+      bpm: track.AverageBpm,
+      key: track.Tonality,
+      comments: track.Comments || ""
+    };
+    
+    if (isRetry && mode === 'missing_year') {
+        const cleanedName = cleanTitle(track.Name);
+        const query = `${track.Artist} ${cleanedName}`;
+        const encodedQuery = encodeURIComponent(query);
+        const searchUrl = `https://musicbrainz.org/search?query=${encodedQuery}&type=release&limit=25&method=indexed`;
+        
+        return {
+            ...base,
+            context_url: searchUrl,
+            cleaned_title: cleanedName
+        };
+    }
+    
+    return base;
+  });
 
   // Force current year to 2026 as per user instruction
   const currentYear = 2026;
@@ -140,21 +193,22 @@ Task: Analyze the provided list of tracks.`;
 
   // MODEL SELECTION STRATEGY
   // Initial Pass: Gemini 3 Flash Preview (Internal Knowledge)
-  // Retry Pass: Gemini 2.5 Pro (Grounded Search)
-  const model = isRetry ? "gemini-2.5-pro" : "gemini-3-flash-preview";
+  // Retry Pass: Gemini 2.5 Flash (URL Context / Grounding)
+  const model = isRetry ? "gemini-2.5-flash" : "gemini-3-flash-preview";
   
   if (mode === 'missing_year') {
     if (isRetry) {
-        // RETRY PROMPT: GROUNDED SEARCH
-        systemInstruction += `\nMODE: DEEP SEARCH (GROUNDING ENABLED)
+        // RETRY PROMPT: URL CONTEXT SEARCH
+        systemInstruction += `\nMODE: DEEP SEARCH (URL CONTEXT)
 Rules:
-1. USE GOOGLE SEARCH to find the exact release date of the track.
-2. If the track is a DJ Utility Edit (Intro, Dirty, Club Edit), you MUST find the **ORIGINAL SONG'S** release year.
+1. For each track, a 'context_url' (MusicBrainz Search) is provided.
+2. USE THIS URL to find the exact release date of the track.
+3. If the track is a DJ Utility Edit (Intro, Dirty, Club Edit), you MUST find the **ORIGINAL SONG'S** release year.
    - Example: "50 Cent - In Da Club (DJCity Intro)" -> Search for "50 Cent In Da Club Release Date" -> Return "2003".
-3. Verify the artist and title matches exactly.
-4. If it is a Remix or Cover, find the release year of that specific version.
-5. Return "0" ONLY if absolutely no information exists on the internet.
-6. Valid Range: 1950-${currentYear}.
+4. Verify the artist and title matches exactly.
+5. If it is a Remix or Cover, find the release year of that specific version.
+6. Return "0" ONLY if absolutely no information exists on the internet.
+7. Valid Range: 1950-${currentYear}.
 Return JSON: [{"id": "...", "release_year": "..."}]`;
     } else {
         // INITIAL PROMPT: INTERNAL KNOWLEDGE
@@ -193,7 +247,8 @@ Return JSON: [{"id": "...", "vibe": "...", "genre": "...", "situation": "...", "
         tracks: tracksPayload, 
         prompt: systemInstruction,
         model: model,
-        googleSearch: isRetry // Enable grounding only on retry
+        googleSearch: false, // User requested "instead of google grounding"
+        useUrlContext: isRetry // Enable URL Context on retry
       })
     });
 
@@ -244,7 +299,7 @@ Return JSON: [{"id": "...", "vibe": "...", "genre": "...", "situation": "...", "
             // Filter tracks that need retry
             const retryTracks = tracks.filter(t => failedIds.includes(t.TrackID));
             
-            // Recursive call with isRetry=true (triggers gemini-2.5-pro + grounding)
+            // Recursive call with isRetry=true (triggers gemini-2.5-flash + url context)
             const retryResult = await generateTagsBatch(retryTracks, mode, true);
             
             // Merge results: overwrite failures with new grounded results
