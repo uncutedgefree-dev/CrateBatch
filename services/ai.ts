@@ -196,12 +196,12 @@ Task: Analyze the provided list of tracks.`;
 
   // MODEL SELECTION STRATEGY
   // Initial Pass: Gemini 3 Flash Preview (Internal Knowledge)
-  // Retry Pass: Gemini 2.5 Flash (URL Context / Grounding)
-  const model = isRetry ? "gemini-2.5-flash" : "gemini-3-flash-preview";
+  // Retry Pass: Gemini 2.5 Pro (URL Context / Deep Search) - As requested
+  const model = isRetry ? "gemini-2.5-pro" : "gemini-3-flash-preview";
   
   if (mode === 'missing_year') {
     if (isRetry) {
-        // RETRY PROMPT: URL CONTEXT SEARCH
+        // RETRY PROMPT: URL CONTEXT SEARCH (DEEP DIVES)
         systemInstruction += `\nMODE: DEEP SEARCH (URL CONTEXT)
 Rules:
 1. For each track, a 'context_url' (MusicBrainz Search) is provided.
@@ -302,7 +302,7 @@ Return JSON: [{"id": "...", "vibe": "...", "genre": "...", "situation": "...", "
             // Filter tracks that need retry
             const retryTracks = tracks.filter(t => failedIds.includes(t.TrackID));
             
-            // Recursive call with isRetry=true (triggers gemini-2.5-flash + url context)
+            // Recursive call with isRetry=true (triggers gemini-2.5-pro + url context)
             const retryResult = await generateTagsBatch(retryTracks, mode, true);
             
             // Merge results: overwrite failures with new grounded results
