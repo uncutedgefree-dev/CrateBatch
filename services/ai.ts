@@ -207,7 +207,7 @@ Rules:
 1. For each track, a 'context_url' (MusicBrainz Search) is provided.
 2. USE THIS URL to find the exact release date of the track.
 3. If the track is a DJ Utility Edit (Intro, Dirty, Club Edit), you MUST find the **ORIGINAL SONG'S** release year.
-   - Example: "50 Cent - In Da Club (DJCity Intro)" -> Search for "50 Cent In Da Club Release Date" -> Return "2003".
+   - Example: "50 Cent - In Da Club (DJCity Intro)" -> Search for "50 Cent - In Da Club Release Date" -> Return "2003".
 4. Verify the artist and title matches exactly.
 5. If it is a Remix or Cover, find the release year of that specific version.
 6. Return "0" ONLY if absolutely no information exists on the internet.
@@ -234,6 +234,8 @@ Return JSON: [{"id": "...", "release_year": "..."}]`;
     // FULL MODE
     systemInstruction += `\nRules:
 1. Identify ORIGINAL release year.
+   - **UTILITY EDITS** (Intro, Clean, Redrum, Club Edit, Extended): Return the ORIGINAL song release year.
+   - **REMIXES/COVERS**: Return the year of that SPECIFIC version.
 2. Use ONLY tags provided.
 3. STRICTLY IGNORE BPM when determining Genre.
 4. VIBES: ${VIBE_TAGS.join(', ')}
@@ -302,16 +304,31 @@ Return JSON: [{"id": "...", "vibe": "...", "genre": "...", "situation": "...", "
             // Filter tracks that need retry
             const retryTracks = tracks.filter(t => failedIds.includes(t.TrackID));
             
-            // Recursive call with isRetry=true (triggers gemini-2.5-pro + url context)
-            const retryResult = await generateTagsBatch(retryTracks, mode, true);
+            // CHUNK RETRY LOGIC: Break into batches of 10
+            const CHUNK_SIZE = 10;
+            let totalRetryCost = 0;
+            let totalRetryInput = 0;
+            let totalRetryOutput = 0;
             
-            // Merge results: overwrite failures with new grounded results
-            Object.assign(resultsMap, retryResult.results);
+            for (let i = 0; i < retryTracks.length; i += CHUNK_SIZE) {
+                const chunk = retryTracks.slice(i, i + CHUNK_SIZE);
+                
+                // Recursive call with isRetry=true for this chunk
+                const chunkResult = await generateTagsBatch(chunk, mode, true);
+                
+                // Merge chunk results
+                Object.assign(resultsMap, chunkResult.results);
+                
+                // Merge Chunk Usage
+                totalRetryCost += chunkResult.usage.cost;
+                totalRetryInput += chunkResult.usage.inputTokens;
+                totalRetryOutput += chunkResult.usage.outputTokens;
+            }
             
-            // Merge Usage & Cost
-            const totalCost = cost + retryResult.usage.cost;
-            const totalInput = usage.promptTokenCount + retryResult.usage.inputTokens;
-            const totalOutput = usage.candidatesTokenCount + retryResult.usage.outputTokens;
+            // Final Usage Merge
+            const totalCost = cost + totalRetryCost;
+            const totalInput = usage.promptTokenCount + totalRetryInput;
+            const totalOutput = usage.candidatesTokenCount + totalRetryOutput;
             
              return { 
                 results: resultsMap, 
