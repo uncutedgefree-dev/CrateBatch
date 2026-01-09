@@ -71,7 +71,8 @@ const App: React.FC = () => {
     if (dashboardFilter) {
       result = result.filter(t => {
         const { type, value } = dashboardFilter;
-        if (type === 'genre') return (t.Genre || "").toLowerCase().includes(value.toLowerCase()) || (t.Analysis?.genre || "").toLowerCase().includes(value.toLowerCase());
+        // Use subGenre instead of genre on AIAnalysis
+        if (type === 'genre') return (t.Genre || "").toLowerCase().includes(value.toLowerCase()) || (t.Analysis?.subGenre || "").toLowerCase().includes(value.toLowerCase());
         if (type === 'vibe') return t.Analysis?.vibe === value;
         if (type === 'year') return (t.Year || t.Analysis?.year || "").startsWith(value);
         if (type === 'key') return t.Tonality === value;
@@ -83,8 +84,9 @@ const App: React.FC = () => {
     if (smartFilter && smartFilter.isSemantic) {
       result = result.filter(track => {
         // A. Match Genres (Sub-Genre or Main Genre)
+        // Use subGenre for comparison
         const genreMatch = smartFilter.genres.length === 0 || smartFilter.genres.some((g: string) => 
-          (track.Analysis?.genre === g) || (track.Genre && track.Genre.includes(g))
+          (track.Analysis?.subGenre === g) || (track.Genre && track.Genre.includes(g))
         );
 
         // B. Match Vibes
@@ -265,17 +267,19 @@ const App: React.FC = () => {
         const res = results[t.TrackID];
         
         if (mode === 'missing_genre') {
+            // For 'missing_genre' mode, we use the mainGenre if available, else subGenre
+            const genreToUse = res.mainGenre || res.subGenre;
             return { 
               ...t, 
-              Genre: res.genre !== "Unknown" ? res.genre : t.Genre,
-               Analysis: t.Analysis ? { ...t.Analysis, genre: res.genre } : { genre: res.genre, vibe: 'Unknown', situation: 'Unknown', year: '0' } as AIAnalysis 
+              Genre: genreToUse !== "Unknown" ? genreToUse : t.Genre, // Update main genre col
+               Analysis: t.Analysis ? { ...t.Analysis, subGenre: res.subGenre } : { subGenre: res.subGenre, vibe: 'Unknown', situation: 'Unknown', year: '0' } as AIAnalysis 
             };
         }
         if (mode === 'missing_year') {
              return { 
                 ...t, 
                 Year: (res.year && res.year !== "0") ? res.year : t.Year,
-                Analysis: t.Analysis ? { ...t.Analysis, year: res.year } : { genre: 'Unknown', vibe: 'Unknown', situation: 'Unknown', year: res.year } as AIAnalysis 
+                Analysis: t.Analysis ? { ...t.Analysis, year: res.year } : { subGenre: 'Unknown', vibe: 'Unknown', situation: 'Unknown', year: res.year } as AIAnalysis 
               };
         }
         return { ...t, Analysis: res };
@@ -343,16 +347,17 @@ const App: React.FC = () => {
                 const res = results[t.TrackID];
                 
                 if (mode === 'missing_genre') {
+                    const genreToUse = res.mainGenre || res.subGenre;
                     return { 
                       ...t, 
-                      Genre: res.genre !== "Unknown" ? res.genre : t.Genre
+                      Genre: genreToUse !== "Unknown" ? genreToUse : t.Genre
                     };
                 }
                 if (mode === 'missing_year') {
                      return { 
                         ...t, 
                         Year: (res.year && res.year !== "0") ? res.year : t.Year,
-                         Analysis: t.Analysis ? { ...t.Analysis, year: res.year } : { genre: 'Unknown', vibe: 'Unknown', situation: 'Unknown', year: res.year } as AIAnalysis 
+                         Analysis: t.Analysis ? { ...t.Analysis, year: res.year } : { subGenre: 'Unknown', vibe: 'Unknown', situation: 'Unknown', year: res.year } as AIAnalysis 
                       };
                 }
                 return { ...t, Analysis: res };

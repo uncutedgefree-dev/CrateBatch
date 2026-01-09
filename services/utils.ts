@@ -47,7 +47,7 @@ export const runConcurrent = async <T>(
  * Finds duplicates based on fuzzy name matching and strict duration checking.
  * Returns both the list of IDs (for counting) and the Groups (for UI review).
  */
-export const findDuplicates = (tracks: RekordboxTrack[]): { ids: string[], groups: DuplicateGroup[] } => {
+export const findDuplicates = (tracks: RekordboxTrack[]): { ids: string[], groups: DuplicateGroup[], duplicateCount: number } => {
   const fingerprintMap: Record<string, RekordboxTrack[]> = {};
   const duplicateIds = new Set<string>();
   const duplicateGroups: DuplicateGroup[] = [];
@@ -117,7 +117,8 @@ export const findDuplicates = (tracks: RekordboxTrack[]): { ids: string[], group
 
   return { 
     ids: Array.from(duplicateIds), 
-    groups: duplicateGroups 
+    groups: duplicateGroups,
+    duplicateCount: duplicateIds.size
   };
 };
 
@@ -132,7 +133,7 @@ export const calculateLibraryStats = (tracks: RekordboxTrack[]): LibraryStats =>
   let missingGenreCount = 0;
 
   // Calculate duplicates
-  const { ids: duplicateIds, groups: duplicateGroups } = findDuplicates(tracks);
+  const { ids: duplicateIds, groups: duplicateGroups, duplicateCount } = findDuplicates(tracks);
 
   tracks.forEach((track) => {
     // 1. Genre Distribution
@@ -249,7 +250,7 @@ export const calculateLibraryStats = (tracks: RekordboxTrack[]): LibraryStats =>
       missingYear: missingYearCount,
       missingGenre: missingGenreCount,
       totalTracks: tracks.length,
-      duplicateCount: duplicateIds.length,
+      duplicateCount: duplicateCount, // Updated
       duplicateGroups: duplicateGroups
     }
   };
