@@ -142,6 +142,17 @@ const cleanTitle = (title: string): string => {
   return cleaned.replace(/\s+/g, " ").trim();
 };
 
+// Helper for slugifying strings (for URL generation)
+const slugify = (text: string): string => {
+  return text
+    .toString()
+    .toLowerCase()
+    .trim()
+    .replace(/&/g, 'and')
+    .replace(/[\s\W-]+/g, '-') 
+    .replace(/^-+|-+$/g, '');
+};
+
 export interface BatchResponse {
   results: Record<string, AIAnalysis>;
   usage: BatchUsage;
@@ -169,35 +180,38 @@ export const generateTagsBatch = async (
         const cleanedName = cleanTitle(track.Name);
         const artist = track.Artist ? track.Artist.trim() : "";
         
-        // Build query string properly with + for spaces for MusicBrainz
-        const queryParts = [];
-        if (artist) queryParts.push(artist);
-        if (cleanedName) queryParts.push(cleanedName);
-        const queryString = queryParts.join(" ");
-        const encodedQuery = encodeURIComponent(queryString).replace(/%20/g, "+");
+        // --- URL TEMPLATE VARIABLE PREPARATION ---
+        const slugArtist = slugify(artist);
+        const slugTrack = slugify(cleanedName);
         
-        // --- PRIMARY MUSICBRAINZ CONTEXT ---
-        const musicbrainzUrl = `https://musicbrainz.org/search?query=${encodedQuery}&type=release&limit=25&method=indexed`;
-        
-        // --- SECONDARY DEEP SEARCH TEMPLATES ---
+        // Encoded versions for query parameters
         const encodedTrack = encodeURIComponent(cleanedName).replace(/%20/g, "+");
         const encodedArtist = encodeURIComponent(artist).replace(/%20/g, "+");
-        const encodedBoth = encodeURIComponent(`${cleanedName} ${artist}`).replace(/%20/g, "+");
-
-        // We provide a set of diverse search URLs to help the model triangulate the date
+        
+        // --- DEEP SEARCH URL TEMPLATES ---
         const deepSearchUrls = {
-            musicbrainz: musicbrainzUrl,
-            genius: `https://genius.com/search?q=${encodedBoth}`, // Search first as direct URL is flaky
+            // Genius: https://genius.com/{{artist}}-{{track_name}}-lyrics
+            genius: `https://genius.com/${slugArtist}-${slugTrack}-lyrics`,
+            
+            // Beatsource: https://www.beatsource.com/search/tracks?q={{track_name}}
             beatsource: `https://www.beatsource.com/search/tracks?q=${encodedTrack}`,
-            audiomack: `https://audiomack.com/search?q=${encodedBoth}`,
+            
+            // Audiomack: https://audiomack.com/{{artist}}/songs
+            audiomack: `https://audiomack.com/${slugArtist}/songs`,
+            
+            // Beatport: https://www.beatport.com/search?q={{track_name}}
             beatport: `https://www.beatport.com/search?q=${encodedTrack}`,
-            discogs: `https://www.discogs.com/search?q=${encodedBoth}&type=all`,
-            deezer: `https://www.deezer.com/search/${encodedBoth}`
+            
+            // Discogs: https://www.discogs.com/search?q={{track_name}}+{{artist}}&type=all
+            discogs: `https://www.discogs.com/search?q=${encodedTrack}+${encodedArtist}&type=all`,
+            
+            // Deezer: https://www.deezer.com/search/{{track_name}}%20{{artist}}
+            deezer: `https://www.deezer.com/search/${encodedTrack}%20${encodedArtist}`
         };
         
         return {
             ...base,
-            context_urls: deepSearchUrls, // Pass ALL templates
+            context_urls: deepSearchUrls, 
             cleaned_title: cleanedName
         };
     }
@@ -220,8 +234,9 @@ Task: Analyze the provided list of tracks.`;
         // RETRY PROMPT: URL CONTEXT SEARCH (DEEP DIVES)
         systemInstruction += `\nMODE: DEEP SEARCH (URL CONTEXT)
 Rules:
-1. For each track, a list of 'context_urls' (MusicBrainz, Genius, Beatport, Discogs, etc.) is provided.
-2. USE THESE URLs to find the exact release date of the track. You can check multiple sources if the first one is unclear.
+1. For each track, a list of 'context_urls' is provided.
+2. USE THESE URLs to find the exact release date of the track.
+   - Genius, Beatsource, Audiomack, Beatport, Discogs, Deezer.
 3. If the track is a DJ Utility Edit (Intro, Dirty, Club Edit), you MUST find the **ORIGINAL SONG'S** release year.
    - Example: "50 Cent - In Da Club (DJCity Intro)" -> Search for "50 Cent - In Da Club Release Date" -> Return "2003".
 4. Verify the artist and title matches exactly.
