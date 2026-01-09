@@ -45,7 +45,8 @@ const TrackRow = React.memo<{
         {track.Analysis ? (
           <div className="flex flex-nowrap gap-2 overflow-x-auto no-scrollbar w-full items-center">
             <span className="shrink-0 px-2 py-1 rounded-sm bg-dj-neon/10 border border-dj-neon/50 text-dj-neon text-[10px] font-bold font-mono whitespace-nowrap uppercase tracking-wider">{track.Analysis.vibe}</span>
-            <span className="shrink-0 px-2 py-1 rounded-sm bg-dj-accent/10 border border-dj-accent/50 text-dj-accent text-[10px] font-bold font-mono whitespace-nowrap uppercase tracking-wider">{track.Analysis.genre}</span>
+            {/* UPDATED: Analysis.genre -> Analysis.subGenre */}
+            <span className="shrink-0 px-2 py-1 rounded-sm bg-dj-accent/10 border border-dj-accent/50 text-dj-accent text-[10px] font-bold font-mono whitespace-nowrap uppercase tracking-wider">{track.Analysis.subGenre}</span>
             <span className="shrink-0 px-2 py-1 rounded-sm bg-blue-500/10 border border-blue-500/50 text-blue-300 text-[10px] font-bold font-mono whitespace-nowrap uppercase tracking-wider">{track.Analysis.situation}</span>
           </div>
         ) : (
@@ -146,9 +147,6 @@ const TrackTable: React.FC<TrackTableProps> = ({ tracks, onAnalyzeTrack, analyzi
       <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, width: '100%', position: 'relative' }}>
         {rowVirtualizer.getVirtualItems().map((virtualRow) => {
           const track = sortedTracks[virtualRow.index];
-          // We need to pass the ORIGINAL index for display if sorting by something else? 
-          // Or just the current row number? Usually row number is expected.
-          // Let's pass (virtualRow.index + 1) effectively.
           return (
             <TrackRow
                 key={track.TrackID} 

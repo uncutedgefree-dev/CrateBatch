@@ -11,7 +11,7 @@ const PLAYLIST_PROXY_URL = "https://generateplaylist-nxf6vuupsq-uc.a.run.app";
 
 export const generateTags = async (track: RekordboxTrack): Promise<AIAnalysis> => {
   const result = await generateTagsBatch([track], 'full');
-  return result.results[track.TrackID] || { vibe: "Unknown", genre: "Unknown", situation: "Unknown", year: "" };
+  return result.results[track.TrackID] || { vibe: "Unknown", subGenre: "Unknown", situation: "Unknown", year: "" };
 };
 
 export const interpretSearchQuery = async (query: string): Promise<SmartFilterCriteria> => {
@@ -25,7 +25,7 @@ export const interpretSearchQuery = async (query: string): Promise<SmartFilterCr
       
       Available Taxonomy:
       Vibes: ${JSON.stringify(VIBE_TAGS)}
-      Genres: ${JSON.stringify(MICRO_GENRE_TAGS)}
+      SubGenres: ${JSON.stringify(MICRO_GENRE_TAGS)}
       Situations: ${JSON.stringify(SITUATION_TAGS)}
       
       Instructions:
@@ -34,13 +34,13 @@ export const interpretSearchQuery = async (query: string): Promise<SmartFilterCr
       3. Extract specific constraints like BPM range, Year range, or Energy level (1-10).
       4. "keywords" should ONLY contain specific Artist names, Track titles, or Record Labels found in the query.
       5. DO NOT include generic words like "song", "track", "music", "mix", "best", "playlist" in "keywords".
-      6. DO NOT include words that you have already mapped to a Vibe, Genre, or Situation in "keywords". (e.g. if you mapped "Love" to "Romantic", do NOT add "Love" to keywords).
+      6. DO NOT include words that you have already mapped to a Vibe, SubGenre, or Situation in "keywords". (e.g. if you mapped "Love" to "Romantic", do NOT add "Love" to keywords).
       7. Return ONLY a JSON object.
       
       JSON Schema:
       {
         "keywords": ["string"], // Free text keywords found in query
-        "genres": ["string"],   // Matched exact taxonomy genres
+        "subGenres": ["string"],   // Matched exact taxonomy sub-genres
         "vibes": ["string"],    // Matched exact taxonomy vibes
         "situations": ["string"], // Matched exact taxonomy situations
         "minBpm": number | null,
@@ -87,7 +87,7 @@ export const interpretSearchQuery = async (query: string): Promise<SmartFilterCr
 
     return {
       keywords: parsedData.keywords || [],
-      genres: parsedData.genres || [],
+      subGenres: parsedData.subGenres || parsedData.genres || [], // Handle legacy 'genres' return
       vibes: parsedData.vibes || [],
       situations: parsedData.situations || [],
       minBpm: parsedData.minBpm,
@@ -103,7 +103,7 @@ export const interpretSearchQuery = async (query: string): Promise<SmartFilterCr
   } catch (error) {
     console.error("Semantic Search Failed:", error);
     // Fallback to basic keyword search
-    return { genres: [], vibes: [], situations: [], keywords: [query], isSemantic: false };
+    return { subGenres: [], vibes: [], situations: [], keywords: [query], isSemantic: false };
   }
 };
 
@@ -223,7 +223,7 @@ Return JSON: [{"id": "...", "release_year": "..."}]`;
     systemInstruction += `\nRules:
 1. Identify the BROAD MAIN GENRE for the track.
 2. Use ONLY these Broad Genres: ${MAIN_GENRE_TAGS.join(', ')}
-3. Return JSON: [{"id": "...", "genre": "..."}]`;
+3. Return JSON: [{"id": "...", "mainGenre": "..."}]`;
   } else {
     // FULL MODE
     systemInstruction += `\nRules:
@@ -235,7 +235,7 @@ Return JSON: [{"id": "...", "release_year": "..."}]`;
 4. VIBES: ${VIBE_TAGS.join(', ')}
 5. GENRES: ${MICRO_GENRE_TAGS.join(', ')}
 6. SITUATIONS: ${SITUATION_TAGS.join(', ')}
-Return JSON: [{"id": "...", "vibe": "...", "genre": "...", "situation": "...", "release_year": "...", "hashtags": "#Genre #Vibe #Situation"}]`;
+Return JSON: [{"id": "...", "vibe": "...", "subGenre": "...", "situation": "...", "release_year": "...", "hashtags": "#SubGenre #Vibe #Situation"}]`;
   }
 
   try {
@@ -274,7 +274,8 @@ Return JSON: [{"id": "...", "vibe": "...", "genre": "...", "situation": "...", "
 
             resultsMap[item.id] = {
               vibe: validateTag(item.vibe, VIBE_TAGS),
-              genre: validateTag(item.genre, genreListToValidate),
+              subGenre: validateTag(item.subGenre || item.genre, MICRO_GENRE_TAGS), // Check both subGenre/genre fields from AI
+              mainGenre: mode === 'missing_genre' ? validateTag(item.mainGenre || item.genre, MAIN_GENRE_TAGS) : undefined,
               situation: validateTag(item.situation, SITUATION_TAGS),
               year: (item.release_year || item.year || "0").toString(),
               hashtags: item.hashtags
