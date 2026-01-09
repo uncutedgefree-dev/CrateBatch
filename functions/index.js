@@ -21,15 +21,15 @@ exports.enrichBatch = onRequest({
 
     const genAI = new GoogleGenerativeAI(apiKey);
     
-    // Default to a known stable model if not specified, but prefer the requested one
-    const modelName = requestedModel || "gemini-2.0-flash";
+    // Default to gemini-3-flash-preview as requested for all tasks
+    const modelName = requestedModel || "gemini-3-flash-preview";
     
     // Configure tools
     const tools = [];
     if (googleSearch) {
       tools.push({ googleSearch: {} });
     }
-    // Support for URL Context tool (requires appropriate model e.g. gemini-2.5-flash)
+    // Support for URL Context tool
     if (useUrlContext) {
       tools.push({ urlContext: {} });
     }
@@ -77,7 +77,7 @@ exports.generatePlaylist = onRequest({
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const modelName = requestedModel || "gemini-2.0-flash";
+    const modelName = requestedModel || "gemini-3-flash-preview";
     
     const model = genAI.getGenerativeModel({ 
       model: modelName,

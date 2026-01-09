@@ -142,17 +142,6 @@ const cleanTitle = (title: string): string => {
   return cleaned.replace(/\s+/g, " ").trim();
 };
 
-// Helper for slugifying strings (for URL generation)
-const slugify = (text: string): string => {
-  return text
-    .toString()
-    .toLowerCase()
-    .trim()
-    .replace(/&/g, 'and')
-    .replace(/[\s\W-]+/g, '-') 
-    .replace(/^-+|-+$/g, '');
-};
-
 export interface BatchResponse {
   results: Record<string, AIAnalysis>;
   usage: BatchUsage;
@@ -165,7 +154,7 @@ export const generateTagsBatch = async (
   isRetry: boolean = false
 ): Promise<BatchResponse> => {
   
-  // Construct payload with URL Context if retrying
+  // Construct payload
   const tracksPayload = tracks.map(track => {
     const base = {
       id: track.TrackID,
@@ -176,42 +165,12 @@ export const generateTagsBatch = async (
       comments: track.Comments || ""
     };
     
+    // Only clean title for retry logic to help search accuracy
+    // No URL construction needed for Google Search Grounding
     if (isRetry && mode === 'missing_year') {
         const cleanedName = cleanTitle(track.Name);
-        const artist = track.Artist ? track.Artist.trim() : "";
-        
-        // --- URL TEMPLATE VARIABLE PREPARATION ---
-        const slugArtist = slugify(artist);
-        const slugTrack = slugify(cleanedName);
-        
-        // Encoded versions for query parameters
-        const encodedTrack = encodeURIComponent(cleanedName).replace(/%20/g, "+");
-        const encodedArtist = encodeURIComponent(artist).replace(/%20/g, "+");
-        
-        // --- DEEP SEARCH URL TEMPLATES ---
-        const deepSearchUrls = {
-            // Genius: https://genius.com/{{artist}}-{{track_name}}-lyrics
-            genius: `https://genius.com/${slugArtist}-${slugTrack}-lyrics`,
-            
-            // Beatsource: https://www.beatsource.com/search/tracks?q={{track_name}}
-            beatsource: `https://www.beatsource.com/search/tracks?q=${encodedTrack}`,
-            
-            // Audiomack: https://audiomack.com/{{artist}}/songs
-            audiomack: `https://audiomack.com/${slugArtist}/songs`,
-            
-            // Beatport: https://www.beatport.com/search?q={{track_name}}
-            beatport: `https://www.beatport.com/search?q=${encodedTrack}`,
-            
-            // Discogs: https://www.discogs.com/search?q={{track_name}}+{{artist}}&type=all
-            discogs: `https://www.discogs.com/search?q=${encodedTrack}+${encodedArtist}&type=all`,
-            
-            // Deezer: https://www.deezer.com/search/{{track_name}}%20{{artist}}
-            deezer: `https://www.deezer.com/search/${encodedTrack}%20${encodedArtist}`
-        };
-        
         return {
             ...base,
-            context_urls: deepSearchUrls, 
             cleaned_title: cleanedName
         };
     }
@@ -226,22 +185,25 @@ Task: Analyze the provided list of tracks.`;
 
   // MODEL SELECTION STRATEGY
   // Initial Pass: Gemini 3 Flash Preview (Internal Knowledge)
-  // Retry Pass: Gemini 2.5 Pro (URL Context / Deep Search) - As requested
-  const model = isRetry ? "gemini-2.5-pro" : "gemini-3-flash-preview";
+  // Retry Pass: Gemini 2.5 Flash (Google Search Grounding)
+  const model = isRetry ? "gemini-2.5-flash" : "gemini-3-flash-preview";
+  
+  // Feature flags
+  const useGoogleSearch = isRetry; // Enable Google Search for retries
+  const useUrlContext = false;     // Disable URL Context completely
   
   if (mode === 'missing_year') {
     if (isRetry) {
-        // RETRY PROMPT: URL CONTEXT SEARCH (DEEP DIVES)
-        systemInstruction += `\nMODE: DEEP SEARCH (URL CONTEXT)
+        // RETRY PROMPT: GOOGLE SEARCH GROUNDING
+        systemInstruction += `\nMODE: DEEP SEARCH (GOOGLE GROUNDING)
 Rules:
-1. For each track, a list of 'context_urls' is provided.
-2. USE THESE URLs to find the exact release date of the track.
-   - Genius, Beatsource, Audiomack, Beatport, Discogs, Deezer.
+1. USE GOOGLE SEARCH to find the original release YEAR of the track.
+2. Exact date is NOT necessary. Return only the YEAR (YYYY).
 3. If the track is a DJ Utility Edit (Intro, Dirty, Club Edit), you MUST find the **ORIGINAL SONG'S** release year.
-   - Example: "50 Cent - In Da Club (DJCity Intro)" -> Search for "50 Cent - In Da Club Release Date" -> Return "2003".
+   - Example: "50 Cent - In Da Club (DJCity Intro)" -> Search for "50 Cent - In Da Club Release Year" -> Return "2003".
 4. Verify the artist and title matches exactly.
 5. If it is a Remix or Cover, find the release year of that specific version.
-6. **STRICT CONFIDENCE**: Return "0" if you cannot find a definitive release date on these sites. DO NOT GUESS.
+6. **STRICT CONFIDENCE**: Return "0" if you cannot find a definitive release year. DO NOT GUESS.
 7. Valid Range: 1950-${currentYear}.
 Return JSON: [{"id": "...", "release_year": "..."}]`;
     } else {
@@ -283,8 +245,8 @@ Return JSON: [{"id": "...", "vibe": "...", "genre": "...", "situation": "...", "
         tracks: tracksPayload, 
         prompt: systemInstruction,
         model: model,
-        googleSearch: false, 
-        useUrlContext: isRetry 
+        googleSearch: useGoogleSearch, 
+        useUrlContext: useUrlContext 
       })
     });
 
