@@ -185,8 +185,8 @@ Task: Analyze the provided list of tracks.`;
 
   // MODEL SELECTION STRATEGY
   // Initial Pass: Gemini 3 Flash Preview (Internal Knowledge)
-  // Retry Pass: Gemini 2.5 Pro (Thinking / Deep Search)
-  const model = isRetry ? "gemini-2.5-pro" : "gemini-3-flash-preview";
+  // Retry Pass: Gemini 2.0 Flash Thinking (Specialized Reasoning Model)
+  const model = isRetry ? "gemini-2.0-flash-thinking-exp" : "gemini-3-flash-preview";
   
   // Feature flags
   const useGoogleSearch = isRetry; // Enable Google Search for retries
