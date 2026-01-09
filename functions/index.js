@@ -10,7 +10,7 @@ exports.enrichBatch = onRequest({
   secrets: ["GEMINI_API_KEY"] 
 }, async (request, response) => {
   try {
-    const { tracks, prompt, model: requestedModel, googleSearch, useUrlContext } = request.body;
+    const { tracks, prompt, model: requestedModel, googleSearch, useUrlContext, useThinking } = request.body;
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!tracks || !prompt || !apiKey) {
@@ -35,11 +35,32 @@ exports.enrichBatch = onRequest({
       tools.push({ urlContext: {} });
     }
     
+    // Configure thinking
+    let thinkingConfig = undefined;
+    if (useThinking) {
+      // If thinking is requested (e.g. for Gemini 3 or 2.5), set high reasoning level
+      // Note: 2.5 Flash Thinking is an experimental model name "gemini-2.0-flash-thinking-exp" usually
+      // But Gemini 3 supports thinkingLevel. 
+      // If the client sends "gemini-2.5-pro", we can assume it supports thinking.
+      
+      // For Gemini 3 Flash/Pro:
+      if (modelName.includes("gemini-3")) {
+          thinkingConfig = { thinkingLevel: "high" }; // Enforce high thinking
+      }
+      // For Gemini 2.5 Pro (as per documentation):
+      // It doesn't support 'thinkingLevel' but uses 'thinkingBudget'.
+      else if (modelName.includes("gemini-2.5")) {
+          // Set a generous budget for deep reasoning
+          thinkingConfig = { thinkingBudget: 4096 }; 
+      }
+    }
+    
     const model = genAI.getGenerativeModel({ 
       model: modelName,
       tools: tools,
       generationConfig: { 
-        responseMimeType: "application/json" 
+        responseMimeType: "application/json",
+        thinkingConfig: thinkingConfig
       } 
     });
 

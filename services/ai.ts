@@ -185,8 +185,8 @@ Task: Analyze the provided list of tracks.`;
 
   // MODEL SELECTION STRATEGY
   // Initial Pass: Gemini 3 Flash Preview (Internal Knowledge)
-  // Retry Pass: Gemini 2.5 Flash (Google Search Grounding)
-  const model = isRetry ? "gemini-2.5-flash" : "gemini-3-flash-preview";
+  // Retry Pass: Gemini 2.5 Pro (Thinking / Deep Search)
+  const model = isRetry ? "gemini-2.5-pro" : "gemini-3-flash-preview";
   
   // Feature flags
   const useGoogleSearch = isRetry; // Enable Google Search for retries
@@ -194,8 +194,8 @@ Task: Analyze the provided list of tracks.`;
   
   if (mode === 'missing_year') {
     if (isRetry) {
-        // RETRY PROMPT: GOOGLE SEARCH GROUNDING
-        systemInstruction += `\nMODE: DEEP SEARCH (GOOGLE GROUNDING)
+        // RETRY PROMPT: GOOGLE SEARCH GROUNDING WITH THINKING
+        systemInstruction += `\nMODE: DEEP SEARCH (GOOGLE GROUNDING + THINKING)
 Rules:
 1. USE GOOGLE SEARCH to find the original release YEAR of the track.
 2. **VERIFICATION**: You MUST verify the Artist AND Title match exactly. Do not confuse with remixes or covers unless specified.
@@ -216,7 +216,10 @@ Return JSON: [{"id": "...", "release_year": "..."}]`;
 3. FOR UTILITY EDITS: Return the ORIGINAL song release year.
    - Example: "50 Cent - In Da Club (DJCity Intro)" -> "2003" (Original).
 4. FOR REMIXES/COVERS: Return the year of that specific version.
-5. **CONFIDENCE CHECK**: If you are less than 90% confident, or if the track is obscure, return "0". We will check it with a search engine in the next step.
+5. **CONFIDENCE CHECK**: 
+   - If you are fully confident, return the year.
+   - **CRITICAL:** For any song that might be from **2024, 2025, or 2026**, if you are not 100% sure of the exact year, RETURN "0". Do not guess recent years. We will verify with Google Search.
+   - If the track is obscure, return "0".
 6. Valid Range: 1950-${currentYear}.
 Return JSON: [{"id": "...", "release_year": "..."}]`;
     }
@@ -254,7 +257,8 @@ Return JSON: [{"id": "...", "vibe": "...", "subGenre": "...", "situation": "..."
         prompt: systemInstruction,
         model: model,
         googleSearch: useGoogleSearch, 
-        useUrlContext: useUrlContext 
+        useUrlContext: useUrlContext,
+        useThinking: isRetry // Enable thinking for retry passes
       }),
       signal: controller.signal
     });
