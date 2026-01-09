@@ -270,7 +270,9 @@ Return JSON: [{"id": "...", "vibe": "...", "subGenre": "...", "situation": "..."
         const items = Array.isArray(parsed) ? parsed : [parsed];
         items.forEach((item: any) => {
           if (item.id) {
-            const genreListToValidate = mode === 'missing_genre' ? MAIN_GENRE_TAGS : MICRO_GENRE_TAGS;
+            // Updated validation logic:
+            // Remove 'genreListToValidate' variable as it was causing the unused variable error.
+            // Direct validation based on mode and target fields.
 
             resultsMap[item.id] = {
               vibe: validateTag(item.vibe, VIBE_TAGS),
