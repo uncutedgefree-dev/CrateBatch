@@ -199,12 +199,13 @@ Task: Analyze the provided list of tracks.`;
 Rules:
 1. USE GOOGLE SEARCH to find the original release YEAR of the track.
 2. Exact date is NOT necessary. Return only the YEAR (YYYY).
-3. If the track is a DJ Utility Edit (Intro, Dirty, Club Edit), you MUST find the **ORIGINAL SONG'S** release year.
-   - Example: "50 Cent - In Da Club (DJCity Intro)" -> Search for "50 Cent - In Da Club Release Year" -> Return "2003".
-4. Verify the artist and title matches exactly.
-5. If it is a Remix or Cover, find the release year of that specific version.
-6. **STRICT CONFIDENCE**: Return "0" if you cannot find a definitive release year. DO NOT GUESS.
-7. Valid Range: 1950-${currentYear}.
+3. If the track is a DJ Utility Edit (Intro, Dirty, Club Edit) or Remix, try to find the release year of that specific version.
+4. **FALLBACK STRATEGY**: If you cannot find the specific Remix/Edit year, **RETURN THE ORIGINAL SONG'S RELEASE YEAR** instead of "0".
+   - Example: "Just Dance (Jamie Drastik Remix)" -> Search Remix -> If fail, Search "Lady Gaga Just Dance Release Year" -> Return "2008".
+5. Use "Youtube Upload Date" or "Discogs Release" as valid sources if official dates are missing.
+6. Verify the artist and title matches loosely if exact match fails.
+7. Return "0" ONLY if absolutely no information exists for even the original song.
+8. Valid Range: 1950-${currentYear}.
 Return JSON: [{"id": "...", "release_year": "..."}]`;
     } else {
         // INITIAL PROMPT: INTERNAL KNOWLEDGE

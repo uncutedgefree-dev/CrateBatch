@@ -18,7 +18,7 @@ export const generateHashtags = (analysis: AIAnalysis): string => {
   const toHashtag = (str: string) => str && str !== "Unknown" ? `#${str.replace(/\s+/g, '')}` : '';
   const parts = [
     analysis.vibe ? toHashtag(analysis.vibe) : '',
-    analysis.genre ? toHashtag(analysis.genre) : '',
+    analysis.subGenre ? toHashtag(analysis.subGenre) : '', // UPDATED
     analysis.situation ? toHashtag(analysis.situation) : ''
   ].filter(Boolean);
   return parts.join(' ');
@@ -53,14 +53,14 @@ const extractAnalysisFromComments = (comments: string): AIAnalysis | undefined =
   };
 
   const vibe = findInList(VIBE_TAGS);
-  const genre = findInList(MICRO_GENRE_TAGS);
+  const subGenre = findInList(MICRO_GENRE_TAGS); // UPDATED
   const situation = findInList(SITUATION_TAGS);
 
   // If we found at least one relevant tag, return an analysis object
-  if (vibe || genre || situation) {
+  if (vibe || subGenre || situation) {
     return {
       vibe: vibe || "Unknown",
-      genre: genre || "Unknown",
+      subGenre: subGenre || "Unknown", // UPDATED
       situation: situation || "Unknown"
     };
   }
@@ -78,9 +78,13 @@ export const updateTrackNode = (track: RekordboxTrack, analysis: AIAnalysis, mod
 
   // MODE: Only fix missing Genre
   if (mode === 'missing_genre') {
-    if (analysis.genre && analysis.genre !== "Unknown") {
-      attributes['@_Genre'] = analysis.genre;
-      // CRITICAL: Do NOT modify Comments or other fields in this mode
+    // NOTE: This mode specifically asks to fix the MAIN Genre field in Rekordbox
+    // We use the AI's 'genre' (which we treat as Main Genre in this mode)
+    // We do NOT use subGenre here unless mainGenre is missing
+    const genreToUse = analysis.mainGenre || analysis.subGenre;
+    
+    if (genreToUse && genreToUse !== "Unknown") {
+      attributes['@_Genre'] = genreToUse;
     }
   } 
   // MODE: Only fix missing Year
@@ -91,7 +95,6 @@ export const updateTrackNode = (track: RekordboxTrack, analysis: AIAnalysis, mod
       if (!currentYear || currentYear === "" || currentYear === "0") {
         attributes['@_Year'] = analysis.year;
       }
-      // CRITICAL: Do NOT modify Comments or other fields in this mode
     }
   } 
   // MODE: Full Enrichment
@@ -101,11 +104,10 @@ export const updateTrackNode = (track: RekordboxTrack, analysis: AIAnalysis, mod
     const currentComments = attributes['@_Comments'] || "";
     
     // Generate new hashtags but filter out "Unknown" tags first
-    // We modify generateHashtags logic slightly here or ensure the Analysis object passed in is clean
     const toHashtag = (str: string) => str && str !== "Unknown" ? `#${str.replace(/\s+/g, '')}` : '';
     const parts = [
       analysis.vibe ? toHashtag(analysis.vibe) : '',
-      analysis.genre ? toHashtag(analysis.genre) : '',
+      analysis.subGenre ? toHashtag(analysis.subGenre) : '', // UPDATED
       analysis.situation ? toHashtag(analysis.situation) : ''
     ].filter(Boolean);
     
@@ -126,12 +128,11 @@ export const updateTrackNode = (track: RekordboxTrack, analysis: AIAnalysis, mod
       }
     }
     
-    if (analysis.genre && analysis.genre !== "Unknown") {
-      const currentGenre = attributes['@_Genre'];
-      if (!currentGenre || currentGenre.trim() === "") {
-         attributes['@_Genre'] = analysis.genre;
-      }
-    }
+    // NOTE: We deliberately DO NOT overwrite the main Genre column with Sub-Genre in Full Mode
+    // to avoid confusion as requested by user.
+    // If the main genre is completely missing, we COULD theoretically fill it,
+    // but the user requested strict separation.
+    // So we only update Year and Comments (Hashtags) in Full Mode.
   }
 };
 
@@ -143,49 +144,41 @@ const formatRekordboxPath = (path: string): string => {
   try {
     cleanPath = decodeURIComponent(path);
   } catch (e) {
-    // fallback to raw if decode fails
     cleanPath = path;
   }
 
-  // 2. Strip existing prefix to normalize to absolute path
+  // 2. Strip existing prefix
   if (cleanPath.startsWith("file://localhost/")) {
     cleanPath = cleanPath.replace("file://localhost/", "/");
   } else if (cleanPath.startsWith("file:///")) {
     cleanPath = cleanPath.replace("file:///", "/");
   }
 
-  // 3. Ensure it starts with / for absolute path
+  // 3. Ensure absolute path
   if (!cleanPath.startsWith("/")) {
     cleanPath = "/" + cleanPath;
   }
 
-  // 4. Re-encode using encodeURI
-  // This encodes spaces to %20 but preserves path structure (slashes)
-  // It does NOT encode '&' or ',' which is standard for file URIs.
-  // The XML Builder will automatically escape '&' to '&amp;' in the attribute value.
+  // 4. Re-encode
   const encodedPath = encodeURI(cleanPath);
   
-  // 5. Add Rekordbox specific prefix
+  // 5. Add Prefix
   return `file://localhost${encodedPath}`;
 };
 
 export const parseRekordboxXML = async (xmlContent: string): Promise<ParsedCollection> => {
   return new Promise((resolve, reject) => {
     try {
-      // Configure parser to PRESERVE EVERYTHING (Order, Attributes, Children)
       const parser = new XMLParser({
         ignoreAttributes: false,
         attributeNamePrefix: "@_",
-        preserveOrder: true,        // Critical: Keeps array structure, preserves <POSITION_MARK> etc.
-        parseAttributeValue: false, // Critical: Keep IDs/BPMs as strings to avoid data type loss
+        preserveOrder: true,        
+        parseAttributeValue: false, 
         trimValues: true,
-        processEntities: true       // Ensure entities are decoded in values
+        processEntities: true       
       });
 
       const parsedData = parser.parse(xmlContent);
-
-      // Traversal for preserveOrder: true structure:
-      // [ { DJ_PLAYLISTS: [ { COLLECTION: [ { TRACK: ... } ] } ] } ]
       
       const root = parsedData?.find((node: any) => node.DJ_PLAYLISTS);
       if (!root) throw new Error("Missing DJ_PLAYLISTS");
@@ -196,50 +189,35 @@ export const parseRekordboxXML = async (xmlContent: string): Promise<ParsedColle
 
       const collectionChildren = collectionNode.COLLECTION;
       
-      // Extract Tracks for UI mapping
       const tracks: RekordboxTrack[] = [];
 
       collectionChildren.forEach((child: any) => {
         if (child.TRACK) {
-          // In preserveOrder, child is { TRACK: [children], :@: {attributes} }
-          // The attributes are in the ':@' property (default for fast-xml-parser)
           const attributes = child[':@'] || {};
-          const trackChildren = child.TRACK; // Array of child nodes (TEMPO, POSITION_MARK, etc.)
-
-          // Logic to extract Energy
-          // Priority 1: <POSITION_MARK Name="Energy X"> (Mixed In Key standard)
-          // Priority 2: "Energy: X" in Comments
-          // Priority 3: "Rating" attribute (0-255 scale)
+          const trackChildren = child.TRACK; 
 
           let energy = "";
           let cueCount = 0;
 
-          // 1. Scan POSITION_MARK children
+          // Energy Logic...
           const energyValues: number[] = [];
           if (Array.isArray(trackChildren)) {
              trackChildren.forEach((node: any) => {
                  if (node.POSITION_MARK) {
-                     cueCount++; // Count total cue points (Memory or Hot Cues)
-                     
+                     cueCount++;
                      const pmAttr = node[':@'];
                      if (pmAttr && pmAttr['@_Name']) {
-                         // Match "Energy 6" or "Energy 8"
                          const match = pmAttr['@_Name'].match(/Energy\s+(\d+)/i);
-                         if (match) {
-                             energyValues.push(parseInt(match[1], 10));
-                         }
+                         if (match) energyValues.push(parseInt(match[1], 10));
                      }
                  }
              });
           }
 
           if (energyValues.length > 0) {
-              // Calculate Mode (Most Frequent Energy Value)
-              // Tracks might have multiple energy cues; the most frequent one represents the track best.
               const counts: Record<number, number> = {};
               let maxCount = 0;
               let modeVal = energyValues[0];
-
               for (const val of energyValues) {
                   counts[val] = (counts[val] || 0) + 1;
                   if (counts[val] > maxCount) {
@@ -250,26 +228,17 @@ export const parseRekordboxXML = async (xmlContent: string): Promise<ParsedColle
               energy = modeVal.toString();
           }
 
-          // 2. Fallback: Comments "Energy: 7"
           const comments = attributes['@_Comments'] || "";
           if (!energy) {
             const energyMatch = comments.match(/Energy\s*:\s*(\d+)/i);
-            if (energyMatch) {
-              energy = energyMatch[1];
-            }
+            if (energyMatch) energy = energyMatch[1];
           }
 
-          // 3. Fallback: Rating Attribute
           if (!energy && attributes['@_Rating']) {
             const r = parseInt(attributes['@_Rating'], 10);
-            if (!isNaN(r) && r > 0) {
-              // Rekordbox stores 1 star = 51, 2 stars = 102, etc. (max 255)
-              // Approximate to 1-5 scale
-              energy = Math.round(r / 51).toString();
-            }
+            if (!isNaN(r) && r > 0) energy = Math.round(r / 51).toString();
           }
 
-          // 4. Extract existing AI tags from Comments
           const existingAnalysis = extractAnalysisFromComments(comments);
 
           tracks.push({
@@ -279,15 +248,15 @@ export const parseRekordboxXML = async (xmlContent: string): Promise<ParsedColle
             AverageBpm: attributes['@_AverageBpm'] || "0",
             Tonality: attributes['@_Tonality'] || "",
             Year: attributes['@_Year'] || "",
-            TotalTime: attributes['@_TotalTime'] || "0", // Extract TotalTime
+            TotalTime: attributes['@_TotalTime'] || "0", 
             BitRate: attributes['@_BitRate'] || "0",
             Kind: attributes['@_Kind'] || "",
             CueCount: cueCount,
             Comments: comments,
             Energy: energy,
-            Genre: attributes['@_Genre'] || "", // Capture Genre for display/editing
-            Analysis: existingAnalysis, // Populate Analysis if tags found
-            _rawNode: child // Store reference to the master node
+            Genre: attributes['@_Genre'] || "", 
+            Analysis: existingAnalysis, 
+            _rawNode: child 
           });
         }
       });
@@ -305,21 +274,16 @@ export const parseRekordboxXML = async (xmlContent: string): Promise<ParsedColle
   });
 };
 
-/**
- * Smart Crate Generator
- * Modifies the fullData object in-place to add an AI_GENERATED folder structure.
- * Now also accepts an optional list of Duplicate IDs to generate a cleaning playlist.
- * Now accepts Custom Playlists (saved searches)
- */
 export const generateSmartPlaylists = (
   fullData: any, 
   tracks: RekordboxTrack[], 
   duplicateIds: string[] = [],
-  customPlaylists: CustomPlaylist[] = []
+  customPlaylists: CustomPlaylist[] = [],
+  rootFolderName: string = "AI_GENERATED"
 ) => {
   // 1. Group Data
   const vibes: Record<string, string[]> = {};
-  const genres: Record<string, string[]> = {};
+  const subGenres: Record<string, string[]> = {}; // UPDATED from genres
   const situations: Record<string, string[]> = {};
 
   tracks.forEach(t => {
@@ -331,10 +295,10 @@ export const generateSmartPlaylists = (
       vibes[t.Analysis.vibe].push(t.TrackID);
     }
     
-    // Group by Genre (AI Generated)
-    if (t.Analysis.genre && t.Analysis.genre !== "Unknown") {
-       if (!genres[t.Analysis.genre]) genres[t.Analysis.genre] = [];
-       genres[t.Analysis.genre].push(t.TrackID);
+    // Group by Sub-Genre (AI Generated)
+    if (t.Analysis.subGenre && t.Analysis.subGenre !== "Unknown") { // UPDATED
+       if (!subGenres[t.Analysis.subGenre]) subGenres[t.Analysis.subGenre] = [];
+       subGenres[t.Analysis.subGenre].push(t.TrackID);
     }
 
     // Group by Situation
@@ -344,13 +308,13 @@ export const generateSmartPlaylists = (
     }
   });
 
-  // 2. Helpers for creating nodes (fast-xml-parser preserveOrder format)
+  // 2. Helpers for creating nodes
   const createFolderNode = (name: string, children: any[] = []) => ({
     NODE: children,
     ':@': { 
       '@_Name': name, 
       '@_Type': '0',
-      '@_Count': children.length.toString() // Critical: Update Count for Folder Validation
+      '@_Count': children.length.toString() 
     } 
   });
 
@@ -363,9 +327,9 @@ export const generateSmartPlaylists = (
       NODE: trackNodes,
       ':@': { 
         '@_Name': name, 
-        '@_Type': '1', // Type 1 = Playlist
-        '@_KeyType': '0', // Critical: Tells Rekordbox these keys are Tracks
-        '@_Entries': trackIds.length.toString() // Critical: Entries Count
+        '@_Type': '1', 
+        '@_KeyType': '0', 
+        '@_Entries': trackIds.length.toString() 
       } 
     };
   };
@@ -377,59 +341,49 @@ export const generateSmartPlaylists = (
     return createFolderNode(folderName, playlists);
   };
 
-  // 3. Build the AI Structure
+  // 3. Build the AI Structure - UPDATED: Genres -> Sub-Genres
   const aiRootChildren: any[] = [
     createSubFolderWithPlaylists("Vibes", vibes),
-    createSubFolderWithPlaylists("Genres", genres),
+    createSubFolderWithPlaylists("Sub-Genres", subGenres), // UPDATED FOLDER NAME
     createSubFolderWithPlaylists("Situations", situations)
   ];
 
-  // 3b. Add Custom Saved Searches Folder if exist
   if (customPlaylists.length > 0) {
     const savedPlaylistsNodes = customPlaylists.map(cp => createPlaylistNode(cp.name, cp.trackIds));
     const savedFolder = createFolderNode("SAVED_SEARCHES", savedPlaylistsNodes);
     aiRootChildren.push(savedFolder);
   }
 
-  // 3c. Add Duplicates Playlist if detected
   if (duplicateIds.length > 0) {
     aiRootChildren.unshift(createPlaylistNode("[POSSIBLE DUPLICATES]", duplicateIds));
   }
 
-  const aiRootNode = createFolderNode("AI_GENERATED", aiRootChildren);
+  const aiRootNode = createFolderNode(rootFolderName, aiRootChildren);
 
   // 4. Inject into fullData
-  // Navigate to DJ_PLAYLISTS -> PLAYLISTS -> NODE (Root)
   const djPlaylists = fullData.find((n: any) => n.DJ_PLAYLISTS)?.DJ_PLAYLISTS;
   if (!djPlaylists) return;
 
   let playlistsNode = djPlaylists.find((n: any) => n.PLAYLISTS);
   
-  // Create PLAYLISTS node if it doesn't exist (unlikely in valid export but possible)
   if (!playlistsNode) {
     playlistsNode = { PLAYLISTS: [] };
     djPlaylists.push(playlistsNode);
   }
 
-  // Find the Root Node inside PLAYLISTS
-  // Usually the first NODE inside PLAYLISTS is the root folder
   let rootNode = playlistsNode.PLAYLISTS.find((n: any) => n.NODE);
 
   if (!rootNode) {
-     // If no root node exists, we treat PLAYLISTS as the container
      playlistsNode.PLAYLISTS.push(aiRootNode);
   } else {
-    // Check if AI_GENERATED already exists in the root and remove it to avoid duplicates
     const children = rootNode.NODE;
     if (Array.isArray(children)) {
-      const existingIndex = children.findIndex((n: any) => n[':@']?.['@_Name'] === 'AI_GENERATED');
+      const existingIndex = children.findIndex((n: any) => n[':@']?.['@_Name'] === rootFolderName);
       if (existingIndex >= 0) {
         children.splice(existingIndex, 1);
       }
-      // Append new AI_GENERATED folder
       children.push(aiRootNode);
 
-      // Critical: Update Root Node Count to prevent Rekordbox from ignoring new/existing nodes
       if (rootNode[':@']) {
          rootNode[':@']['@_Count'] = children.length.toString();
       }
@@ -438,8 +392,6 @@ export const generateSmartPlaylists = (
 };
 
 export const exportRekordboxXML = (fullData: any): string => {
-  // Pre-process Step: Sanitize Locations
-  // We traverse the fullData structure to find all tracks and fix their Location attribute.
   const root = fullData.find((node: any) => node.DJ_PLAYLISTS);
   if (root?.DJ_PLAYLISTS) {
     const collectionNode = root.DJ_PLAYLISTS.find((node: any) => node.COLLECTION);
@@ -455,12 +407,11 @@ export const exportRekordboxXML = (fullData: any): string => {
     }
   }
 
-  // Build XML from the modified Master State directly
   const builder = new XMLBuilder({
     ignoreAttributes: false,
     attributeNamePrefix: "@_",
-    preserveOrder: true, // Must match parser to handle the array structure
-    format: true,        // Pretty print
+    preserveOrder: true, 
+    format: true,        
     suppressBooleanAttributes: false
   });
 

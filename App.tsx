@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { ListPlus, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
+import { ListPlus, CheckCircle, XCircle, AlertCircle, Settings as SettingsIcon } from 'lucide-react';
 import FileUploader from './components/FileUploader';
 import TrackTable from './components/TrackTable';
 import LibraryDashboard from './components/LibraryDashboard';
@@ -7,10 +7,11 @@ import DuplicateReviewModal from './components/DuplicateReviewModal';
 import ProcessingStatsDisplay from './components/ProcessingStats';
 import EnrichmentWarningModal from './components/EnrichmentWarningModal';
 import PlaylistNameModal from './components/PlaylistNameModal';
+import SettingsModal from './components/SettingsModal';
 import { parseRekordboxXML, exportRekordboxXML, updateTrackNode, generateSmartPlaylists } from './services/parser';
 import { generateTagsBatch, interpretSearchQuery } from './services/ai';
 import { chunkArray, calculateLibraryStats, findDuplicates, runConcurrent } from './services/utils';
-import { RekordboxTrack, ParseStatus, ProcessingStats, CustomPlaylist, AIAnalysis } from './types';
+import { RekordboxTrack, ParseStatus, ProcessingStats, CustomPlaylist, AIAnalysis, AppSettings } from './types';
 
 const App: React.FC = () => {
   const [tracks, setTracks] = useState<RekordboxTrack[]>([]);
@@ -24,7 +25,21 @@ const App: React.FC = () => {
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [showEnrichmentWarning, setShowEnrichmentWarning] = useState(false);
   const [showPlaylistModal, setShowPlaylistModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [toastMessage, setToastMessage] = useState<{ message: string, type: 'success' | 'error' | 'info' } | null>(null);
+  
+  // Settings State
+  const [settings, setSettings] = useState<AppSettings>({
+    export: {
+      filenameFormat: 'cratebatch_export.xml',
+      folderName: 'AI_GENERATED',
+      backup: true
+    },
+    import: {
+      validateOnImport: false
+    }
+  });
+
   const fullXmlDataRef = useRef<any>(null);
   const mainScrollRef = useRef<HTMLElement>(null);
   
@@ -38,12 +53,20 @@ const App: React.FC = () => {
   const [dashboardFilter, setDashboardFilter] = useState<{ type: string, value: string } | null>(null);
   const [smartFilter, setSmartFilter] = useState<any>(null);
   const [activeProcessingIds, setActiveProcessingIds] = useState<Set<string>>(new Set());
+  
+  // Focus Mode State
+  const [focusMode, setFocusMode] = useState<{ label: string, ids: Set<string> } | null>(null);
 
   const stats = useMemo(() => calculateLibraryStats(tracks), [tracks]);
 
   const visibleTracks = useMemo(() => {
     let result = tracks;
     
+    // 0. Focus Mode (Overrides other filters if active)
+    if (focusMode) {
+      return result.filter(t => focusMode.ids.has(t.TrackID));
+    }
+
     // 1. Dashboard Filters (Clicking Charts)
     if (dashboardFilter) {
       result = result.filter(t => {
@@ -81,7 +104,6 @@ const App: React.FC = () => {
                           (!smartFilter.maxYear || year <= smartFilter.maxYear);
 
         // F. Match Keywords (Fuzzy Search in Title/Artist/Album/Genre)
-        // We include Album and Genre here to be more flexible if AI returns a keyword that is actually a genre or album name
         const keywordMatch = smartFilter.keywords.length === 0 || smartFilter.keywords.every((k: string) => 
           (track.Name + " " + track.Artist + " " + (track.Album || "") + " " + (track.Genre || "")).toLowerCase().includes(k.toLowerCase())
         );
@@ -96,37 +118,29 @@ const App: React.FC = () => {
     }
 
     return result;
-  }, [tracks, activeSearchQuery, dashboardFilter, smartFilter]);
+  }, [tracks, activeSearchQuery, dashboardFilter, smartFilter, focusMode]);
 
   const handleSearch = async (query: string) => {
-    // Trim query first
     query = query.trim();
-    
-    // Clear filters if empty
     if (!query) {
       setActiveSearchQuery("");
       setSmartFilter(null);
       setActiveFilterName(null);
       return;
     }
-
     setActiveSearchQuery(query);
     setToastMessage({ message: "Analyzing Request...", type: "info" });
-    
     try {
       const criteria = await interpretSearchQuery(query);
       if (criteria.isSemantic) {
         setSmartFilter(criteria);
         setActiveFilterName(`AI: "${query}"`);
       } else {
-        // If AI says it's not semantic (just keywords), we rely on basic search but still clear the AI filter
         setSmartFilter(null);
       }
-      // Success - clear toast
       setToastMessage(null);
     } catch (e) {
       console.error("Search failed", e);
-      // On error, fallback to basic text search (which is already triggered by setActiveSearchQuery)
       setSmartFilter(null);
       setToastMessage({ message: "Analysis Unavailable. Using standard search.", type: "error" });
       setTimeout(() => setToastMessage(null), 3000);
@@ -148,12 +162,32 @@ const App: React.FC = () => {
          setTracks(result.tracks);
          fullXmlDataRef.current = result.fullData; 
          setStatus(ParseStatus.SUCCESS);
+         
+         // Validation On Import Check
+         if (settings.import.validateOnImport) {
+            const { duplicateCount } = findDuplicates(result.tracks);
+            const missingYears = result.tracks.filter(t => !t.Year || t.Year === "0").length;
+            if (duplicateCount > 0 || missingYears > 0) {
+                 setToastMessage({ message: `Imported with Warnings: ${duplicateCount} dupes, ${missingYears} missing years.`, type: "info" });
+            } else {
+                 setToastMessage({ message: "Import Successful & Clean", type: "success" });
+                 setTimeout(() => setToastMessage(null), 3000);
+            }
+         }
        }
     }
   };
 
   const processBatch = async (targetTracks: RekordboxTrack[], mode: 'full' | 'missing_genre' | 'missing_year') => {
-    if (targetTracks.length === 0) return;
+    if (targetTracks.length === 0) {
+         setToastMessage({ message: "No tracks match criteria.", type: "info" });
+         setTimeout(() => setToastMessage(null), 3000);
+         return;
+    }
+    
+    // Enable Focus Mode for visual clarity
+    setFocusMode({ label: `Processing: ${mode.replace('missing_', 'Fix ')}`, ids: new Set(targetTracks.map(t => t.TrackID)) });
+
     setIsEnriching(true);
     setIsStatsVisible(true);
     setTerminalLog(`[${new Date().toLocaleTimeString()}] JOB START: ${mode.toUpperCase()} (${targetTracks.length} items)...`);
@@ -206,7 +240,6 @@ const App: React.FC = () => {
       }
       
       const durationSoFarMin = (performance.now() - startTime) / 60000;
-      // Calculate global SPM: Total Processed / Total Time in Minutes
       const currentSpm = processedCount / (durationSoFarMin || 0.0001);
       
       const remainingSongs = targetTracks.length - processedCount;
@@ -232,25 +265,19 @@ const App: React.FC = () => {
         const res = results[t.TrackID];
         
         if (mode === 'missing_genre') {
-            // ONLY update the Genre field for missing_genre mode
             return { 
               ...t, 
               Genre: res.genre !== "Unknown" ? res.genre : t.Genre,
                Analysis: t.Analysis ? { ...t.Analysis, genre: res.genre } : { genre: res.genre, vibe: 'Unknown', situation: 'Unknown', year: '0' } as AIAnalysis 
-              // DO NOT touch Analysis.genre or other fields here
             };
         }
         if (mode === 'missing_year') {
-             // ONLY update the Year field for missing_year mode
              return { 
                 ...t, 
                 Year: (res.year && res.year !== "0") ? res.year : t.Year,
                 Analysis: t.Analysis ? { ...t.Analysis, year: res.year } : { genre: 'Unknown', vibe: 'Unknown', situation: 'Unknown', year: res.year } as AIAnalysis 
-                // DO NOT touch Analysis.year or other fields here
               };
         }
-        
-        // Full AI Enrich mode - Update Analysis object
         return { ...t, Analysis: res };
       }));
 
@@ -267,13 +294,12 @@ const App: React.FC = () => {
       });
     });
 
-    // Run 8 concurrent tasks with a small stagger delay (250ms)
     await runConcurrent(tasks, 8, 250);
 
-    // Process failed tracks if any
+    // RETRY LOGIC for failed tracks
     if (failedTracks.length > 0) {
         setTerminalLog(prev => prev + `\n[${new Date().toLocaleTimeString()}] Retrying ${failedTracks.length} failed tracks...`);
-        const retryChunks = chunkArray<RekordboxTrack>(failedTracks, 50); // Smaller chunks for retry
+        const retryChunks = chunkArray<RekordboxTrack>(failedTracks, 50);
         const retryTasks = retryChunks.map((chunk, idx) => async () => {
              const chunkIds = chunk.map(t => t.TrackID);
               setActiveProcessingIds(prev => {
@@ -283,7 +309,8 @@ const App: React.FC = () => {
               });
 
               const chunkStart = performance.now();
-              const { results, usage, error } = await generateTagsBatch(chunk, mode);
+              // Pass isRetry=true
+              const { results, usage, error } = await generateTagsBatch(chunk, mode, true);
                const chunkDuration = performance.now() - chunkStart;
                
                if (!error && Object.keys(results).length > 0) {
@@ -316,21 +343,18 @@ const App: React.FC = () => {
                 const res = results[t.TrackID];
                 
                 if (mode === 'missing_genre') {
-                    // ONLY update the Genre field for missing_genre mode
                     return { 
                       ...t, 
                       Genre: res.genre !== "Unknown" ? res.genre : t.Genre
                     };
                 }
                 if (mode === 'missing_year') {
-                    // ONLY update the Year field for missing_year mode
                      return { 
                         ...t, 
                         Year: (res.year && res.year !== "0") ? res.year : t.Year,
                          Analysis: t.Analysis ? { ...t.Analysis, year: res.year } : { genre: 'Unknown', vibe: 'Unknown', situation: 'Unknown', year: res.year } as AIAnalysis 
                       };
                 }
-                
                 return { ...t, Analysis: res };
               }));
 
@@ -346,7 +370,7 @@ const App: React.FC = () => {
                 return next;
               });
         });
-        await runConcurrent(retryTasks, 4, 500); // Slower concurrency for retries
+        await runConcurrent(retryTasks, 4, 500);
     }
     
     setIsEnriching(false);
@@ -357,10 +381,24 @@ const App: React.FC = () => {
 
   const handleExport = () => {
     const { ids } = findDuplicates(tracks);
-    generateSmartPlaylists(fullXmlDataRef.current, tracks, ids, savedPlaylists);
+    // Use settings for folder name and playlist generation
+    generateSmartPlaylists(fullXmlDataRef.current, tracks, ids, savedPlaylists, settings.export.folderName);
+    
     const xml = exportRekordboxXML(fullXmlDataRef.current);
     const url = URL.createObjectURL(new Blob([xml], { type: 'text/xml' }));
-    const a = document.createElement('a'); a.href = url; a.download = 'cratebatch_export.xml'; a.click();
+    
+    // Construct Filename based on settings
+    let filename = settings.export.filenameFormat || 'cratebatch_export.xml';
+    if (!filename.endsWith('.xml')) filename += '.xml';
+    
+    if (settings.export.backup) {
+        const date = new Date().toISOString().split('T')[0];
+        filename = filename.replace('.xml', `_${date}.xml`);
+    }
+
+    const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
+    setToastMessage({ message: `Exported to ${filename}`, type: "success" });
+    setTimeout(() => setToastMessage(null), 3000);
   };
 
   const handleAnalyzeSingle = async (trackId: string) => {
@@ -389,8 +427,11 @@ const App: React.FC = () => {
     setActiveSearchQuery("");
     setSearchInput("");
   };
+  
+  const dismissFocusMode = () => {
+    setFocusMode(null);
+  };
 
-  // Helper to determine if a track needs full enrichment
   const needsEnrichment = (t: RekordboxTrack) => {
       return !t.Analysis || t.Analysis.vibe === 'Unknown' || t.Analysis.vibe === undefined;
   };
@@ -412,6 +453,7 @@ const App: React.FC = () => {
               onKeyDown={e => e.key === 'Enter' && handleSearch(searchInput)} 
               className="bg-dj-panel border border-dj-border rounded-none py-1.5 px-6 text-sm focus:outline-none focus:border-dj-neon w-80 transition-all focus:w-96 text-white placeholder-dj-dim font-mono" 
             />
+            <button onClick={() => setShowSettingsModal(true)} className="p-2 hover:bg-white/10 rounded-full transition-colors"><SettingsIcon className="w-4 h-4 text-dj-dim hover:text-white" /></button>
             <button onClick={() => setShowEnrichmentWarning(true)} className="bg-dj-neon text-black border border-dj-neon px-5 py-1.5 rounded-sm text-xs font-bold uppercase hover:bg-white hover:border-white transition-all tracking-wider">ENRICH</button>
             <button onClick={handleExport} className="bg-transparent text-dj-neon border border-dj-neon px-5 py-1.5 rounded-sm text-xs font-bold uppercase hover:bg-dj-neon/10 transition-all tracking-wider">EXPORT XML</button>
             <button onClick={() => { setTracks([]); setStatus(ParseStatus.IDLE); }} className="text-[10px] px-3 py-1.5 rounded-sm border border-dj-border text-dj-dim hover:text-red-500 hover:border-red-500 uppercase tracking-wider">CLOSE</button>
@@ -450,9 +492,19 @@ const App: React.FC = () => {
                   }} 
                   onReviewDuplicates={() => setShowDuplicateModal(true)} 
                />
+               
                <div className="flex items-center justify-between">
                  <div className="flex items-center gap-4">
                    <div className="text-dj-dim text-xs font-mono uppercase tracking-wider">Showing {visibleTracks.length} tracks {activeFilterName && `(Filtered: ${activeFilterName})`}</div>
+                   
+                   {/* FOCUS MODE INDICATOR */}
+                   {focusMode && (
+                        <div className="flex items-center gap-2 px-3 py-1 bg-dj-neon/20 border border-dj-neon rounded-sm">
+                            <span className="text-xs font-bold text-dj-neon uppercase tracking-wider">{focusMode.label}</span>
+                            <button onClick={dismissFocusMode} className="hover:text-white text-dj-neon/70"><XCircle className="w-3 h-3" /></button>
+                        </div>
+                   )}
+
                    {(activeFilterName || activeSearchQuery) && (
                      <button 
                        onClick={clearFilters} 
@@ -462,7 +514,7 @@ const App: React.FC = () => {
                      </button>
                    )}
                  </div>
-                 {(activeFilterName || activeSearchQuery) && <button onClick={() => setShowPlaylistModal(true)} className="flex items-center gap-1.5 px-3 py-1 bg-green-500/10 border border-green-500 rounded-sm text-[10px] font-bold text-green-500 hover:bg-green-500 hover:text-black uppercase"><ListPlus className="w-3 h-3" />Save Playlist</button>}
+                 {(activeFilterName || activeSearchQuery || focusMode) && <button onClick={() => setShowPlaylistModal(true)} className="flex items-center gap-1.5 px-3 py-1 bg-green-500/10 border border-green-500 rounded-sm text-[10px] font-bold text-green-500 hover:bg-green-500 hover:text-black uppercase"><ListPlus className="w-3 h-3" />Save Playlist</button>}
                </div>
                <TrackTable tracks={visibleTracks} onAnalyzeTrack={handleAnalyzeSingle} analyzingIds={activeProcessingIds} scrollElement={mainScrollRef.current} />
             </div>
@@ -471,7 +523,9 @@ const App: React.FC = () => {
       </main>
       {showDuplicateModal && <DuplicateReviewModal groups={stats.missingData.duplicateGroups} onClose={() => setShowDuplicateModal(false)} />}
       {showEnrichmentWarning && <EnrichmentWarningModal filteredCount={visibleTracks.length} totalCount={tracks.length} onProcessFiltered={() => { setShowEnrichmentWarning(false); processBatch(visibleTracks.filter(needsEnrichment), 'full'); }} onProcessAll={() => { setShowEnrichmentWarning(false); processBatch(tracks.filter(needsEnrichment), 'full'); }} onCancel={() => setShowEnrichmentWarning(false)} />}
-      {showPlaylistModal && <PlaylistNameModal defaultValue={activeFilterName || activeSearchQuery || "New Playlist"} count={visibleTracks.length} onSave={name => { setSavedPlaylists(prev => [...prev, { name, trackIds: visibleTracks.map(t => t.TrackID) }]); setShowPlaylistModal(false); setToastMessage({ message: `Playlist "${name}" saved!`, type: "success" }); setTimeout(() => setToastMessage(null), 3000); }} onClose={() => setShowPlaylistModal(false)} />}
+      {showPlaylistModal && <PlaylistNameModal defaultValue={activeFilterName || activeSearchQuery || focusMode?.label || "New Playlist"} count={visibleTracks.length} onSave={name => { setSavedPlaylists(prev => [...prev, { name, trackIds: visibleTracks.map(t => t.TrackID) }]); setShowPlaylistModal(false); setToastMessage({ message: `Playlist "${name}" saved!`, type: "success" }); setTimeout(() => setToastMessage(null), 3000); }} onClose={() => setShowPlaylistModal(false)} />}
+      {showSettingsModal && <SettingsModal settings={settings} onSave={newSettings => { setSettings(newSettings); setShowSettingsModal(false); }} onClose={() => setShowSettingsModal(false)} />}
+      
       {toastMessage && (
         <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-[200] flex items-center gap-3 bg-dj-panel border ${toastMessage.type === 'error' ? 'border-red-500 text-red-100' : 'border-dj-neon/50 text-white'} px-6 py-3 rounded-none shadow-2xl animate-fade-in`}>
           {toastMessage.type === 'error' ? <AlertCircle className="w-4 h-4 text-red-500" /> : <CheckCircle className="w-4 h-4 text-dj-neon" />}

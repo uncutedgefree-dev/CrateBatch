@@ -1,9 +1,10 @@
 export interface AIAnalysis {
   vibe: string;
-  genre: string;
+  subGenre: string; // Micro-Genre (e.g. "Liquid DnB")
+  mainGenre?: string; // Main Genre (e.g. "Drum & Bass") - used for missing_genre fix
   situation: string;
   year?: string; 
-  hashtags?: string; // New field for pre-formatted hashtags
+  hashtags?: string; 
 }
 
 export interface RekordboxTrack {
@@ -94,7 +95,7 @@ export interface ProcessingStats {
 
 export interface SmartFilterCriteria {
   keywords: string[];
-  genres: string[];
+  subGenres: string[]; // Renamed from 'genres' to 'subGenres'
   vibes: string[];
   situations: string[];
   minBpm?: number;
@@ -110,6 +111,17 @@ export interface SmartFilterCriteria {
 export interface CustomPlaylist {
   name: string;
   trackIds: string[];
+}
+
+export interface AppSettings {
+  export: {
+    filenameFormat: string;
+    folderName: string;
+    backup: boolean;
+  };
+  import: {
+    validateOnImport: boolean;
+  };
 }
 
 // Global Window Extension for Electron
