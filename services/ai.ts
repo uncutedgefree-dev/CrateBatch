@@ -198,14 +198,15 @@ Task: Analyze the provided list of tracks.`;
         systemInstruction += `\nMODE: DEEP SEARCH (GOOGLE GROUNDING)
 Rules:
 1. USE GOOGLE SEARCH to find the original release YEAR of the track.
-2. Exact date is NOT necessary. Return only the YEAR (YYYY).
-3. If the track is a DJ Utility Edit (Intro, Dirty, Club Edit) or Remix, try to find the release year of that specific version.
-4. **FALLBACK STRATEGY**: If you cannot find the specific Remix/Edit year, **RETURN THE ORIGINAL SONG'S RELEASE YEAR** instead of "0".
-   - Example: "Just Dance (Jamie Drastik Remix)" -> Search Remix -> If fail, Search "Lady Gaga Just Dance Release Year" -> Return "2008".
-5. Use "Youtube Upload Date" or "Discogs Release" as valid sources if official dates are missing.
-6. Verify the artist and title matches loosely if exact match fails.
-7. Return "0" ONLY if absolutely no information exists for even the original song.
-8. Valid Range: 1950-${currentYear}.
+2. **VERIFICATION**: You MUST verify the Artist AND Title match exactly. Do not confuse with remixes or covers unless specified.
+   - Beware of same-named songs by different artists.
+3. If the track is a DJ Utility Edit (Intro, Dirty, Club Edit), you MUST find the **ORIGINAL SONG'S** release year.
+   - Example: "50 Cent - In Da Club (DJCity Intro)" -> Search for "50 Cent - In Da Club Release Year" -> Return "2003".
+4. If it is a Remix or Cover, find the release year of that specific version.
+   - If specific version year is unfound, FALLBACK to the Original Song's year.
+5. **RECENT SONGS**: Pay special attention to songs from 2024, 2025, and 2026. Use search to confirm recent releases.
+6. **STRICT CONFIDENCE**: Return "0" if you cannot find a definitive release year. DO NOT GUESS.
+7. Valid Range: 1950-${currentYear}.
 Return JSON: [{"id": "...", "release_year": "..."}]`;
     } else {
         // INITIAL PROMPT: INTERNAL KNOWLEDGE
@@ -239,6 +240,12 @@ Return JSON: [{"id": "...", "vibe": "...", "subGenre": "...", "situation": "..."
   }
 
   try {
+    // Create an AbortController for client-side timeout
+    const controller = new AbortController();
+    // Set a generous timeout (e.g., 10 minutes) for the client fetch
+    // Server-side timeout is handled in Cloud Functions (set to 60 mins max)
+    const timeoutId = setTimeout(() => controller.abort(), 600000); 
+
     const response = await fetch(ENRICH_PROXY_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -248,8 +255,11 @@ Return JSON: [{"id": "...", "vibe": "...", "subGenre": "...", "situation": "..."
         model: model,
         googleSearch: useGoogleSearch, 
         useUrlContext: useUrlContext 
-      })
+      }),
+      signal: controller.signal
     });
+    
+    clearTimeout(timeoutId);
 
     const res = await response.json();
     if (!res.success) throw new Error(res.error || "Proxy Error");
@@ -270,13 +280,9 @@ Return JSON: [{"id": "...", "vibe": "...", "subGenre": "...", "situation": "..."
         const items = Array.isArray(parsed) ? parsed : [parsed];
         items.forEach((item: any) => {
           if (item.id) {
-            // Updated validation logic:
-            // Remove 'genreListToValidate' variable as it was causing the unused variable error.
-            // Direct validation based on mode and target fields.
-
             resultsMap[item.id] = {
               vibe: validateTag(item.vibe, VIBE_TAGS),
-              subGenre: validateTag(item.subGenre || item.genre, MICRO_GENRE_TAGS), // Check both subGenre/genre fields from AI
+              subGenre: validateTag(item.subGenre || item.genre, MICRO_GENRE_TAGS),
               mainGenre: mode === 'missing_genre' ? validateTag(item.mainGenre || item.genre, MAIN_GENRE_TAGS) : undefined,
               situation: validateTag(item.situation, SITUATION_TAGS),
               year: (item.release_year || item.year || "0").toString(),
@@ -302,6 +308,7 @@ Return JSON: [{"id": "...", "vibe": "...", "subGenre": "...", "situation": "..."
             const retryTracks = tracks.filter(t => failedIds.includes(t.TrackID));
             
             // CHUNK RETRY LOGIC: Break into batches of 10
+            // Reverted back to 10 as per user request to prefer timeout increase
             const CHUNK_SIZE = 10;
             let totalRetryCost = 0;
             let totalRetryInput = 0;
@@ -345,6 +352,10 @@ Return JSON: [{"id": "...", "vibe": "...", "subGenre": "...", "situation": "..."
       error: Object.keys(resultsMap).length === 0 ? "No data returned" : undefined 
     };
   } catch (e: any) {
+    // Handle AbortError specifically if needed
+    if (e.name === 'AbortError') {
+        return { results: {}, usage: { inputTokens: 0, outputTokens: 0, cost: 0 }, error: "Request timed out on client" };
+    }
     return { results: {}, usage: { inputTokens: 0, outputTokens: 0, cost: 0 }, error: e.message };
   }
 };

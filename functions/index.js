@@ -4,7 +4,8 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 exports.enrichBatch = onRequest({ 
   cors: true,
-  timeoutSeconds: 540,
+  // Increased timeout to max allowed for Gen2 (3600s = 60 mins) to handle deep search batches
+  timeoutSeconds: 3600,
   memory: "1GiB",
   secrets: ["GEMINI_API_KEY"] 
 }, async (request, response) => {
@@ -42,6 +43,8 @@ exports.enrichBatch = onRequest({
       } 
     });
 
+    // Check if the prompt + tracks is too long, if so we might need to truncate or split
+    // For now, we just pass it through
     const result = await model.generateContent(prompt + "\n\nTracks:\n" + JSON.stringify(tracks));
     const aiResponse = await result.response;
     const text = aiResponse.text();
@@ -56,8 +59,17 @@ exports.enrichBatch = onRequest({
 
   } catch (error) {
     logger.error(`Batch AI Error`, error);
+    
+    // Extract the full error details
     const msg = error.message || "Unknown Error";
-    response.status(500).send({ success: false, error: msg });
+    let status = 500;
+    
+    // Pass through 400 errors from Google API
+    if (msg.includes("400") || msg.includes("INVALID_ARGUMENT")) {
+        status = 400;
+    }
+
+    response.status(status).send({ success: false, error: msg, details: error });
   }
 });
 
