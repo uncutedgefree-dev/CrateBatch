@@ -167,21 +167,37 @@ export const generateTagsBatch = async (
     
     if (isRetry && mode === 'missing_year') {
         const cleanedName = cleanTitle(track.Name);
-        
-        // Build query string properly with + for spaces
         const artist = track.Artist ? track.Artist.trim() : "";
+        
+        // Build query string properly with + for spaces for MusicBrainz
         const queryParts = [];
         if (artist) queryParts.push(artist);
         if (cleanedName) queryParts.push(cleanedName);
-        
         const queryString = queryParts.join(" ");
         const encodedQuery = encodeURIComponent(queryString).replace(/%20/g, "+");
         
-        const searchUrl = `https://musicbrainz.org/search?query=${encodedQuery}&type=release&limit=25&method=indexed`;
+        // --- PRIMARY MUSICBRAINZ CONTEXT ---
+        const musicbrainzUrl = `https://musicbrainz.org/search?query=${encodedQuery}&type=release&limit=25&method=indexed`;
+        
+        // --- SECONDARY DEEP SEARCH TEMPLATES ---
+        const encodedTrack = encodeURIComponent(cleanedName).replace(/%20/g, "+");
+        const encodedArtist = encodeURIComponent(artist).replace(/%20/g, "+");
+        const encodedBoth = encodeURIComponent(`${cleanedName} ${artist}`).replace(/%20/g, "+");
+
+        // We provide a set of diverse search URLs to help the model triangulate the date
+        const deepSearchUrls = {
+            musicbrainz: musicbrainzUrl,
+            genius: `https://genius.com/search?q=${encodedBoth}`, // Search first as direct URL is flaky
+            beatsource: `https://www.beatsource.com/search/tracks?q=${encodedTrack}`,
+            audiomack: `https://audiomack.com/search?q=${encodedBoth}`,
+            beatport: `https://www.beatport.com/search?q=${encodedTrack}`,
+            discogs: `https://www.discogs.com/search?q=${encodedBoth}&type=all`,
+            deezer: `https://www.deezer.com/search/${encodedBoth}`
+        };
         
         return {
             ...base,
-            context_url: searchUrl,
+            context_urls: deepSearchUrls, // Pass ALL templates
             cleaned_title: cleanedName
         };
     }
@@ -204,13 +220,13 @@ Task: Analyze the provided list of tracks.`;
         // RETRY PROMPT: URL CONTEXT SEARCH (DEEP DIVES)
         systemInstruction += `\nMODE: DEEP SEARCH (URL CONTEXT)
 Rules:
-1. For each track, a 'context_url' (MusicBrainz Search) is provided.
-2. USE THIS URL to find the exact release date of the track.
+1. For each track, a list of 'context_urls' (MusicBrainz, Genius, Beatport, Discogs, etc.) is provided.
+2. USE THESE URLs to find the exact release date of the track. You can check multiple sources if the first one is unclear.
 3. If the track is a DJ Utility Edit (Intro, Dirty, Club Edit), you MUST find the **ORIGINAL SONG'S** release year.
    - Example: "50 Cent - In Da Club (DJCity Intro)" -> Search for "50 Cent - In Da Club Release Date" -> Return "2003".
 4. Verify the artist and title matches exactly.
 5. If it is a Remix or Cover, find the release year of that specific version.
-6. Return "0" ONLY if absolutely no information exists on the internet.
+6. **STRICT CONFIDENCE**: Return "0" if you cannot find a definitive release date on these sites. DO NOT GUESS.
 7. Valid Range: 1950-${currentYear}.
 Return JSON: [{"id": "...", "release_year": "..."}]`;
     } else {
